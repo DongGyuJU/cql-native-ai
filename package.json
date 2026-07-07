@@ -1,0 +1,37 @@
+{
+  "name": "cql-native-ai",
+  "version": "0.1.0",
+  "description": "Category Theory-based Multi-Agent AI framework. Domains as Categories, Agents as Functors, communication as Natural Transformations, Meta AI as Lax Colimit.",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "tsc",
+    "example": "ts-node examples/company-network.ts",
+    "test": "node --test dist/test"
+  },
+  "keywords": [
+    "category-theory",
+    "multi-agent",
+    "ai",
+    "functor",
+    "natural-transformation",
+    "llm",
+    "agents"
+  ],
+  "author": "DongGyu Ju",
+  "license": "MIT",
+  "devDependencies": {
+    "ts-node": "^10.9.2",
+    "typescript": "^5.9.3"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "@types/node": "^26.1.0"
+  }
+}
