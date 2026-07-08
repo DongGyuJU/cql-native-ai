@@ -3,14 +3,19 @@
 [![CI](https://github.com/DongGyuJU/cql-native-ai/actions/workflows/ci.yml/badge.svg)](https://github.com/DongGyuJU/cql-native-ai/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![npm](https://img.shields.io/badge/npm-not_yet_published-lightgrey)](https://www.npmjs.com/package/cql-native-ai)
+[![Open in StackBlitz](https://developer.stackblitz.com/img/open_in_stackblitz.svg)](https://stackblitz.com/github/DongGyuJU/cql-native-ai)
 
 > **Category Theory-based Multi-Agent AI framework.**
 > Domains as **Categories**, agents as **Functors**, communication as **Natural Transformations**, Meta AI as a **Lax Colimit**.
 
+📖 New here? [**Add your own domain in 10 minutes →**](docs/tutorial.md)
+
 Zero-dependency core. Works with any LLM (or none — rule-based agents are first-class).
 
-```
+```bash
 npm install cql-native-ai
+# or straight from GitHub (pre-release):
+npm install github:DongGyuJU/cql-native-ai
 ```
 
 ## Why
@@ -31,6 +36,14 @@ CQL Native AI enforces one mathematically-defined interface — `DomainInsight` 
 - Agents can be rules, classical ML, or LLM calls — the interface is identical.
 - Adding a domain = one `registry.register()` call. The Meta Agent, classifier prompts, and keyword inference adapt automatically (extensibility by the colimit's universal property).
 - `checkNaturality()` empirically tests whether an LLM-backed pipeline violates order-independence.
+
+## How this compares
+
+| | Structure guarantee | Adding a domain | Works without an LLM |
+|---|---|---|---|
+| Prompt engineering (raw LLM) | none | rewrite prompts | no |
+| LangGraph / CrewAI | graph, but agent-to-agent is free text | rewire the graph | no |
+| **cql-native-ai** | typed `DomainInsight` interface + empirical naturality check | one `registry.register()` call | yes (rule-based agents are first-class) |
 
 ## Quick start
 
