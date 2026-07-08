@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<title>강남대로 — 실시간 상황판</title>
+<style>
+  * { box-sizing: border-box; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    background: #0f1115; color: #e5e7eb; margin: 0; padding: 32px;
+  }
+  h1 { font-size: 20px; margin: 0 0 4px; }
+  .sub { color: #9ca3af; font-size: 13px; margin-bottom: 24px; }
+  .insight-box {
+    background: #1a1d24; border: 1px solid #2a2e37; border-radius: 12px;
+    padding: 20px; margin-bottom: 24px; line-height: 1.6; font-size: 15px;
+  }
+  .road {
+    display: flex; align-items: center; gap: 8px; margin-bottom: 28px;
+  }
+  .segment {
+    flex: 1; padding: 18px; border-radius: 10px; text-align: center;
+    transition: background 0.6s ease, border-color 0.6s ease;
+    border: 2px solid #2a2e37;
+  }
+  .segment .name { font-size: 13px; color: #9ca3af; margin-bottom: 6px; }
+  .segment .speed { font-size: 26px; font-weight: 700; }
+  .segment .queue { font-size: 12px; color: #9ca3af; margin-top: 4px; }
+  .arrow { color: #4b5563; font-size: 20px; }
+  .s-good { background: #14251a; border-color: #22c55e; }
+  .s-info { background: #1a2030; border-color: #3b82f6; }
+  .s-warning { background: #2a1f14; border-color: #f59e0b; }
+  .grid {
+    display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 14px;
+  }
+  .card { background: #1a1d24; border: 1px solid #2a2e37; border-radius: 12px; padding: 14px; }
+  .card .dot { width: 9px; height: 9px; border-radius: 50%; display: inline-block; margin-right: 6px; }
+  .good { background: #22c55e; } .info { background: #3b82f6; } .warning { background: #f59e0b; }
+  .card .name { font-weight: 600; font-size: 13px; }
+  .card .headline { margin-top: 6px; font-size: 13px; color: #d1d5db; }
+</style>
+</head>
+<body>
+  <h1>🚗 강남대로 — 실시간 상황판</h1>
+  <div class="sub" id="meta-sub">연결 중...</div>
+
+  <div class="insight-box" id="insight-text">불러오는 중...</div>
+
+  <!-- 도로 스트립: 정체가 왼쪽에서 오른쪽으로 시차를 두고 전파되는 걸 보여줌 -->
+  <div class="road" id="road-strip">
+    <div class="segment" id="seg-gangnam"><div class="name">강남역사거리</div><div class="speed">-</div><div class="queue"></div></div>
+    <div class="arrow">→</div>
+    <div class="segment" id="seg-sinnonhyeon"><div class="name">신논현역사거리</div><div class="speed">-</div><div class="queue"></div></div>
+    <div class="arrow">→</div>
+    <div class="segment" id="seg-nonhyeon"><div class="name">논현역사거리</div><div class="speed">-</div><div class="queue"></div></div>
+  </div>
+
+  <div class="grid" id="cards"></div>
+
+  <script>
+    const statusClass = { good: 's-good', info: 's-info', warning: 's-warning' };
+    const dotClass = { good: 'good', info: 'info', warning: 'warning' };
+    const segMap = { 'traffic-gangnam': 'seg-gangnam', 'traffic-sinnonhyeon': 'seg-sinnonhyeon', 'traffic-nonhyeon': 'seg-nonhyeon' };
+
+    async function refresh() {
+      try {
+        const res = await fetch('/insight');
+        const data = await res.json();
+        const { unified, tick, generatedAt } = data;
+
+        document.getElementById('meta-sub').textContent =
+          `tick #${tick} · ${new Date(generatedAt).toLocaleTimeString('ko-KR')} 기준 · 3초마다 자동 갱신`;
+        document.getElementById('insight-text').textContent = unified.insight;
+
+        const cardsEl = document.getElementById('cards');
+        cardsEl.innerHTML = '';
+        unified.contributing.forEach((d) => {
+          if (segMap[d.domain]) {
+            const el = document.getElementById(segMap[d.domain]);
+            el.className = 'segment ' + statusClass[d.status];
+            el.querySelector('.speed').textContent = d.rawData?.avgSpeedKmh ? d.rawData.avgSpeedKmh + 'km/h' : d.headline;
+            el.querySelector('.queue').textContent = d.rawData?.queueMeters ? '대기 ' + d.rawData.queueMeters + 'm' : '';
+            return;
+          }
+          const card = document.createElement('div');
+          card.className = 'card';
+          card.innerHTML = `
+            <div><span class="dot ${dotClass[d.status]}"></span><span class="name">${d.domain}</span></div>
+            <div class="headline">${d.headline}</div>
+          `;
+          cardsEl.appendChild(card);
+        });
+      } catch (e) {
+        document.getElementById('meta-sub').textContent = '서버 연결 끊김 — road-dashboard-server.ts가 실행 중인지 확인하세요.';
+      }
+    }
+
+    refresh();
+    setInterval(refresh, 3000);
+  </script>
+</body>
+</html>
