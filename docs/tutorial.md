@@ -235,6 +235,55 @@ any adapter code. The Meta Agent itself computes a **Lax Colimit**: a
 synthesis that provably keeps every domain's contribution
 (`unified.contributing`).
 
+## Step 7 — Wire it into a real server
+
+`console.log` isn't where insights live in production — your frontend,
+Slack bot, or dashboard needs to reach them over HTTP. The pattern is:
+your existing backend imports the library, and each route is a thin
+wrapper around `.analyze()` / `meta.run()`.
+
+A complete runnable Fastify server with the tutorial's domains is at
+[`examples/http-server.ts`](../examples/http-server.ts):
+
+```bash
+npx ts-node examples/http-server.ts
+# cql-native-ai example server on http://localhost:3100
+# domains: tickets, deploys
+```
+
+**Analyze one domain** — `POST /analyze/:domainId`:
+
+```bash
+curl -X POST localhost:3100/analyze/tickets \
+  -H 'Content-Type: application/json' \
+  -d '{"openCount":14,"oldestAgeHours":30,"vipWaiting":false}'
+```
+
+```json
+{"domain":"tickets","status":"warning","headline":"14 open, oldest 30h","detail":"Oldest ticket has breached the 24h SLA window.","recommendation":"Assign the two oldest tickets before standup","confidence":0.95,"rawData":{"openCount":14,"oldestAgeHours":30,"vipWaiting":false},"timestamp":"2026-07-08T05:31:36.733Z"}
+```
+
+**Cross-domain synthesis** — `POST /meta`:
+
+```bash
+curl -X POST localhost:3100/meta \
+  -H 'Content-Type: application/json' \
+  -d '{"inputs":{"tickets":{"openCount":14,"oldestAgeHours":30,"vipWaiting":false},"deploys":{"failedLastWeek":3,"pendingReleases":5}}}'
+```
+
+```json
+{"insight":"Attention needed: tickets (14 open, oldest 30h), deploys (3 failed deploys last week). Recommended action: Assign the two oldest tickets before standup","warningDomains":["tickets","deploys"],"goodDomains":[],"contributing":[...],"meta":{"activeDomainCount":2,"analyzedDomainCount":2,"generatedAt":"2026-07-08T05:31:36.742Z"}}
+```
+
+The full `contributing` array (every domain's insight, unabridged) rides
+along in the response — so your UI can render both the synthesis *and*
+the per-domain breakdown from a single call.
+
+The server also exposes `GET /domains` for discoverability, and unknown
+domain ids return a 404 with the list of available ones. This whole file
+is ~120 lines; adapting it to Express/Koa/Hono or dropping the routes
+into your existing server is mechanical.
+
 ## Next steps
 
 - A larger worked example (4 domains, HR ⇒ Engineering natural

@@ -40,6 +40,7 @@
   "homepage": "https://github.com/DongGyuJU/cql-native-ai#readme",
   "devDependencies": {
     "@types/node": "^20.14.0",
+    "fastify": "^5.10.0",
     "ts-node": "^10.9.2",
     "typescript": "^5.9.3"
   },
