@@ -6,32 +6,43 @@
   "types": "dist/index.d.ts",
   "files": [
     "dist",
-    "README.md"
+    "README.md",
+    "LICENSE"
   ],
   "scripts": {
     "build": "tsc",
+    "prepublishOnly": "npm run build",
     "example": "ts-node examples/company-network.ts",
-    "test": "node --test dist/test"
+    "test": "tsc -p tsconfig.test.json && node --test dist-test/__tests__/*.test.js"
   },
   "keywords": [
     "category-theory",
     "multi-agent",
+    "multi-agent-systems",
     "ai",
     "functor",
     "natural-transformation",
     "llm",
-    "agents"
+    "agents",
+    "functional-programming",
+    "typescript"
   ],
   "author": "DongGyu Ju",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/DongGyuJU/cql-native-ai.git"
+  },
+  "bugs": {
+    "url": "https://github.com/DongGyuJU/cql-native-ai/issues"
+  },
+  "homepage": "https://github.com/DongGyuJU/cql-native-ai#readme",
   "devDependencies": {
+    "@types/node": "^20.14.0",
     "ts-node": "^10.9.2",
     "typescript": "^5.9.3"
   },
   "engines": {
     "node": ">=18"
-  },
-  "dependencies": {
-    "@types/node": "^26.1.0"
   }
 }

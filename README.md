@@ -1,5 +1,9 @@
 # cql-native-ai
 
+[![CI](https://github.com/DongGyuJU/cql-native-ai/actions/workflows/ci.yml/badge.svg)](https://github.com/DongGyuJU/cql-native-ai/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+[![npm](https://img.shields.io/badge/npm-not_yet_published-lightgrey)](https://www.npmjs.com/package/cql-native-ai)
+
 > **Category Theory-based Multi-Agent AI framework.**
 > Domains as **Categories**, agents as **Functors**, communication as **Natural Transformations**, Meta AI as a **Lax Colimit**.
 
@@ -114,6 +118,17 @@ const { sourceInsight, targetInsight } = await hrToEng.apply(hrData);
 // Empirical naturality check — does processing order change conclusions?
 const report = await hrToEng.checkNaturality([q1Data, q2Data]);
 console.log(report.consistent, report.similarity);
+```
+
+## Testing
+
+The test suite exercises the framework's core guarantees directly:
+`DomainAgent` output validation, `DomainRegistry` extensibility (Proposition 2),
+`MetaAgent`'s no-information-loss colimit, and `checkNaturality()`'s ability
+to detect order-dependence.
+
+```bash
+npm test
 ```
 
 ## Full example
