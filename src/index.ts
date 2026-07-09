@@ -36,6 +36,16 @@ export {
   describeMorphisms,
 } from './schema';
 
+export {
+  SchemaMapping,
+  SchemaMappingViolationReason,
+  SchemaMappingViolation,
+  SchemaMappingCheckReport,
+  checkSchemaMappingLaws,
+  deltaF,
+  withDerivedAttributes,
+} from './schemaMapping';
+
 export { DomainAgent, createAgent, AnalyzeFn } from './agent';
 export { DomainRegistry } from './registry';
 export {
