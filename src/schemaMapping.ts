@@ -27,7 +27,7 @@
 // logic still legitimately belongs, now scoped to per-row attribute
 // computation instead of an opaque whole-object translation function.
 
-import { DomainSchema, Instance, Row } from './schema';
+import { DomainSchema, Instance, Row, resolvePathEndpoints, pathsAreDeclaredEqual } from './schema';
 
 /** F : TargetSchema → SourceSchema */
 export interface SchemaMapping {
@@ -49,7 +49,8 @@ export type SchemaMappingViolationReason =
   | 'unknown-morphism-in-path'
   | 'disconnected-path'
   | 'identity-endpoint-mismatch'
-  | 'path-endpoint-mismatch';
+  | 'path-endpoint-mismatch'
+  | 'equation-not-respected';
 
 export interface SchemaMappingViolation {
   reason: SchemaMappingViolationReason;
@@ -62,26 +63,7 @@ export interface SchemaMappingCheckReport {
   violations: SchemaMappingViolation[];
 }
 
-/** Resolves a path's overall (from, to) in the source schema, or null if the path is disconnected/invalid. */
-function resolvePathEndpoints(
-  sourceSchema: DomainSchema,
-  path: string[],
-): { from: string; to: string } | 'unknown-morphism' | 'disconnected' {
-  const byName = new Map(sourceSchema.morphisms.map((m) => [m.name, m]));
-  let from: string | undefined;
-  let cursor: string | undefined;
-  for (const name of path) {
-    const m = byName.get(name);
-    if (!m) return 'unknown-morphism';
-    if (from === undefined) {
-      from = m.from;
-      cursor = m.from;
-    }
-    if (cursor !== m.from) return 'disconnected';
-    cursor = m.to;
-  }
-  return { from: from as string, to: cursor as string };
-}
+// resolvePathEndpoints is imported from ./schema — shared with checkInstanceIsFunctor's equation checking.
 
 /**
  * Verifies F : targetSchema → sourceSchema is well-typed: every target
@@ -152,6 +134,36 @@ export function checkSchemaMappingLaws(
       violations.push({
         reason: 'path-endpoint-mismatch', subject: m.name,
         detail: `"${m.name}": F(${m.from})="${expectedFrom}" and F(${m.to})="${expectedTo}", but the declared path [${path.join(', ')}] actually goes from "${endpoints.from}" to "${endpoints.to}"`,
+      });
+    }
+  }
+
+  // F must send declared-equal paths to declared-equal paths — the
+  // functor law extended to equations. We only need to check paths
+  // that are actually named in targetSchema.equations; each morphism
+  // used inside them was already validated above.
+  for (const eq of targetSchema.equations ?? []) {
+    const mappedFrom = F.onObjects[eq.from];
+    if (mappedFrom === undefined) continue; // already reported as missing-object-mapping
+
+    const buildSourcePath = (path: string[]): string[] | null => {
+      const out: string[] = [];
+      for (const morphName of path) {
+        const step = F.onMorphisms[morphName];
+        if (step === undefined) return null; // already reported elsewhere
+        out.push(...step);
+      }
+      return out;
+    };
+
+    const leftInSource = buildSourcePath(eq.left);
+    const rightInSource = buildSourcePath(eq.right);
+    if (leftInSource === null || rightInSource === null) continue;
+
+    if (!pathsAreDeclaredEqual(sourceSchema, mappedFrom, leftInSource, rightInSource)) {
+      violations.push({
+        reason: 'equation-not-respected', subject: eq.name,
+        detail: `F does not respect equation "${eq.name}": F(${eq.left.join(', ')}) = [${leftInSource.join(', ')}] and F(${eq.right.join(', ')}) = [${rightInSource.join(', ')}], which are not declared equal in the source schema — data satisfying the target's equation could migrate to data that violates the source's`,
       });
     }
   }

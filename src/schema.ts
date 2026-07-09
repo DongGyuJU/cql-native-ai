@@ -38,10 +38,37 @@ export interface MorphismDef {
   to: string;   // target object name
 }
 
-/** DomainSchema = a finite Category, given as a graph that generates it freely. */
+/** DomainSchema = a finite Category, given as a graph that generates it freely,
+ * plus (optionally) declared path equations for the non-free case. */
 export interface DomainSchema {
   objects: Record<string, ObjectDef>;
   morphisms: MorphismDef[];
+  /**
+   * Declared path equations (Phase D). SCOPE: two paths are only
+   * considered equal if they are syntactically identical OR appear as
+   * an explicitly declared equation here — this is NOT a congruence
+   * closure (it will not automatically derive that f;p = f;q from
+   * p = q). That closure computation is the genuinely hard, word-
+   * problem-adjacent part of Functorial Data Migration and is out of
+   * scope. What IS in scope, and fully decidable: (a) checking whether
+   * a concrete finite Instance satisfies its schema's declared
+   * equations (checkInstanceIsFunctor, below), and (b) checking whether
+   * a SchemaMapping sends declared-equal paths to declared-equal paths
+   * (checkSchemaMappingLaws, in ./schemaMapping). Both are finite,
+   * always-terminating computations — the undecidability of the general
+   * word problem never enters into them.
+   */
+  equations?: PathEquation[];
+}
+
+/** A declared path equation: `left` and `right`, both starting at object `from`, must land on the same row for every element of `from`. */
+export interface PathEquation {
+  /** human-readable name, e.g. "memberOf;partOf = directDept" */
+  name: string;
+  /** the shared object both paths start from */
+  from: string;
+  left: string[];
+  right: string[];
 }
 
 /** A row is an element of an Object's underlying set, identified by id. */
@@ -64,7 +91,8 @@ export type FunctorViolationReason =
   | 'unknown-source-object'
   | 'unknown-target-object'
   | 'not-total'
-  | 'dangling-reference';
+  | 'dangling-reference'
+  | 'equation-violated';
 
 export interface FunctorViolation {
   morphism: string;
@@ -80,6 +108,62 @@ export interface FunctorCheckReport {
   violations: FunctorViolation[];
   checkedMorphisms: number;
   checkedRows: number;
+}
+
+export type PathEndpointsResult = { from: string; to: string } | 'unknown-morphism' | 'disconnected';
+
+/**
+ * Resolves a path's overall (from, to) endpoints within `schema` by
+ * walking its generating morphisms. Shared by checkInstanceIsFunctor
+ * (equation checking) and checkSchemaMappingLaws (./schemaMapping) so
+ * both use one, tested, implementation of "what does this path connect."
+ */
+export function resolvePathEndpoints(schema: DomainSchema, path: string[]): PathEndpointsResult {
+  const byName = new Map(schema.morphisms.map((m) => [m.name, m]));
+  let from: string | undefined;
+  let cursor: string | undefined;
+  for (const name of path) {
+    const m = byName.get(name);
+    if (!m) return 'unknown-morphism';
+    if (from === undefined) {
+      from = m.from;
+      cursor = m.from;
+    }
+    if (cursor !== m.from) return 'disconnected';
+    cursor = m.to;
+  }
+  // empty path: caller must know the anchor object from context (identity)
+  return from === undefined ? 'disconnected' : { from, to: cursor as string };
+}
+
+function arraysEqual(a: string[], b: string[]): boolean {
+  return a.length === b.length && a.every((x, i) => x === b[i]);
+}
+
+/**
+ * Are `pathA` and `pathB` (both starting at object `from`) equal
+ * according to `schema`? Equal means: syntactically identical, OR an
+ * explicitly declared equation (in either orientation). This is
+ * intentionally NOT a congruence closure — see DomainSchema.equations
+ * for why that's out of scope, and what remains fully decidable here.
+ */
+export function pathsAreDeclaredEqual(schema: DomainSchema, from: string, pathA: string[], pathB: string[]): boolean {
+  if (arraysEqual(pathA, pathB)) return true;
+  return (schema.equations ?? []).some(
+    (eq) =>
+      eq.from === from &&
+      ((arraysEqual(eq.left, pathA) && arraysEqual(eq.right, pathB)) ||
+        (arraysEqual(eq.left, pathB) && arraysEqual(eq.right, pathA))),
+  );
+}
+
+function walkPath(instance: Instance, path: string[], startRowId: string): string | undefined {
+  let cursor: string | undefined = startRowId;
+  for (const morphName of path) {
+    cursor = cursor === undefined ? undefined : instance.fk[morphName]?.[cursor];
+    if (cursor === undefined) return undefined;
+  }
+  return cursor;
 }
 
 /**
@@ -136,6 +220,27 @@ export function checkInstanceIsFunctor(
           morphism: m.name, sourceObject: m.from, targetObject: m.to, rowId: row.id,
           reason: 'dangling-reference',
           detail: `row "${row.id}" of "${m.from}" maps via "${m.name}" to "${mapped}", which does not exist in "${m.to}" — orphaned foreign key`,
+        });
+      }
+    }
+  }
+
+  for (const eq of schema.equations ?? []) {
+    const rows = instance.rows[eq.from] ?? [];
+    for (const row of rows) {
+      const leftResult = walkPath(instance, eq.left, row.id);
+      const rightResult = walkPath(instance, eq.right, row.id);
+      // if either side is non-total, that's already reported by the
+      // per-morphism checks above — don't double-report here.
+      if (leftResult === undefined || rightResult === undefined) continue;
+      if (leftResult !== rightResult) {
+        violations.push({
+          morphism: eq.name,
+          sourceObject: eq.from,
+          targetObject: '(equation)',
+          rowId: row.id,
+          reason: 'equation-violated',
+          detail: `row "${row.id}" of "${eq.from}": path [${eq.left.join(', ')}] leads to "${leftResult}" but path [${eq.right.join(', ')}] leads to "${rightResult}" — these must agree per equation "${eq.name}"`,
         });
       }
     }
