@@ -46,6 +46,8 @@ export {
   withDerivedAttributes,
 } from './schemaMapping';
 
+export { sigmaF, piF, JoinObjectDef } from './kanExtensions';
+
 export { DomainAgent, createAgent, AnalyzeFn } from './agent';
 export { DomainRegistry } from './registry';
 export {
