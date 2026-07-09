@@ -1,11 +1,12 @@
 // src/index.ts
 // CQL Native AI — Category Theory-based Multi-Agent framework.
 //
-//   Domain            = Category            (DomainDefinition)
-//   Domain Agent      = Functor             (DomainAgent)
-//   Agent-to-agent    = Natural Transform.  (NaturalTransformation / DomainInsight)
-//   Meta Agent        = Lax Colimit         (MetaAgent)
-//   Domain Registry   = Index Category      (DomainRegistry)
+//   Domain            = Category            (DomainDefinition / DomainSchema)
+//   Instance          = Set-valued Functor   (Instance, checkInstanceIsFunctor)
+//   Domain Agent      = Functor              (DomainAgent)
+//   Agent-to-agent    = Natural Transform.   (NaturalTransformation / DomainInsight)
+//   Meta Agent        = Lax Colimit          (MetaAgent)
+//   Domain Registry   = Index Category       (DomainRegistry)
 
 export {
   DomainInsight,
@@ -17,6 +18,23 @@ export {
   InsightStatus,
   errorInsight,
 } from './types';
+
+export {
+  AttributeType,
+  AttributeDef,
+  ObjectDef,
+  MorphismDef,
+  DomainSchema,
+  Row,
+  Instance,
+  FunctorViolationReason,
+  FunctorViolation,
+  FunctorCheckReport,
+  checkInstanceIsFunctor,
+  InstanceBuilder,
+  describeSchema,
+  describeMorphisms,
+} from './schema';
 
 export { DomainAgent, createAgent, AnalyzeFn } from './agent';
 export { DomainRegistry } from './registry';

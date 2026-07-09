@@ -91,6 +91,17 @@ export interface DomainDefinition {
   metaSummaryTemplate?: string;
   /** Inactive domains are ignored by Registry/Meta */
   active?: boolean;
+  /**
+   * Phase A: the machine-checkable version of this domain's Category
+   * (Objects with typed attributes + generating Morphisms). Optional —
+   * `schema`/`relations` above remain the lightweight human/prompt-facing
+   * description. When present, `typedSchema` can be used with
+   * `checkInstanceIsFunctor()` from `./schema` to verify that a concrete
+   * dataset is actually a valid functor into this domain's category
+   * (equivalently: has no dangling foreign keys / missing links).
+   * See `./schema` for `DomainSchema`, `Instance`, `InstanceBuilder`.
+   */
+  typedSchema?: import('./schema').DomainSchema;
 }
 
 /** Error-shaped insight used when an agent throws. Keeps the colimit total. */
