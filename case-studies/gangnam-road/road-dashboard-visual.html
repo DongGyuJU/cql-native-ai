@@ -1,0 +1,191 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<title>강남대로 — 차량 흐름 시각화</title>
+<style>
+  * { box-sizing: border-box; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    background: #0f1115; color: #e5e7eb; margin: 0; padding: 32px;
+  }
+  h1 { font-size: 20px; margin: 0 0 4px; }
+  .sub { color: #9ca3af; font-size: 13px; margin-bottom: 20px; }
+  .insight-box {
+    background: #1a1d24; border: 1px solid #2a2e37; border-radius: 12px;
+    padding: 16px 20px; margin-bottom: 24px; line-height: 1.5; font-size: 14px;
+  }
+
+  /* ── road strip ── */
+  .road-wrap { position: relative; margin-bottom: 10px; }
+  .segments { display: flex; }
+  .segment {
+    width: 360px; height: 110px; position: relative;
+    border: 2px solid #2a2e37; border-radius: 10px;
+    margin-right: 6px;
+    transition: border-color 0.6s ease, background 0.6s ease;
+    overflow: hidden;
+  }
+  .segment .label {
+    position: absolute; top: 8px; left: 12px; font-size: 12px; color: #9ca3af;
+  }
+  .segment .speed-label {
+    position: absolute; top: 8px; right: 12px; font-size: 13px; font-weight: 700;
+  }
+  /* lane markings */
+  .segment .lane {
+    position: absolute; top: 62px; left: 0; right: 0; height: 0;
+    border-top: 2px dashed #374151;
+  }
+  .s-good { border-color: #22c55e; background: #10160f; }
+  .s-info { border-color: #3b82f6; background: #0f141f; }
+  .s-warning { border-color: #f59e0b; background: #1f160c; }
+
+  /* ── cars ── */
+  /* car layer spans the full width of all three segments */
+  .car-layer {
+    position: absolute; top: 0; left: 0; height: 110px;
+    width: calc(360px * 3 + 12px); pointer-events: none;
+  }
+  .car {
+    position: absolute; font-size: 20px;
+    transition: filter 0.4s ease;
+    will-change: transform;
+  }
+  .glow-good { filter: drop-shadow(0 0 3px #22c55e); }
+  .glow-info { filter: drop-shadow(0 0 3px #3b82f6); }
+  .glow-warning { filter: drop-shadow(0 0 4px #f59e0b); }
+
+  .legend { font-size: 12px; color: #6b7280; margin-top: 14px; }
+</style>
+</head>
+<body>
+  <h1>🚗 강남대로 — 차량 흐름 시각화</h1>
+  <div class="sub" id="meta-sub">연결 중...</div>
+  <div class="insight-box" id="insight-text">불러오는 중...</div>
+
+  <div class="road-wrap">
+    <div class="segments">
+      <div class="segment" id="seg-gangnam">
+        <div class="label">강남역사거리</div><div class="speed-label">-</div><div class="lane"></div>
+      </div>
+      <div class="segment" id="seg-sinnonhyeon">
+        <div class="label">신논현역사거리</div><div class="speed-label">-</div><div class="lane"></div>
+      </div>
+      <div class="segment" id="seg-nonhyeon">
+        <div class="label">논현역사거리</div><div class="speed-label">-</div><div class="lane"></div>
+      </div>
+    </div>
+    <div class="car-layer" id="car-layer"></div>
+  </div>
+  <div class="legend">
+    차량 이동 속도 = 해당 구간 DomainInsight의 avgSpeedKmh · 생성 빈도 = vehiclesPerMin ·
+    구간 경계를 넘는 순간 다음 구간의 현재 속도로 전환됨 (전파 지연이 파도로 보이는 이유)
+  </div>
+
+<script>
+  // ── same mapping verified in speed-mapping-test.ts ──
+  const SEGMENT_PX = 360, GAP_PX = 6;
+  function speedToPixelsPerFrame(speedKmh) {
+    const scaled = (speedKmh / 28) * (SEGMENT_PX / (4 * 60)); // 1.5 px/frame at 28km/h
+    return Math.min(4, Math.max(0.05, scaled));
+  }
+
+  const SEG_IDS = ['gangnam', 'sinnonhyeon', 'nonhyeon'];
+  const TOTAL_PX = SEGMENT_PX * 3 + GAP_PX * 2;
+  const statusClass = { good: 's-good', info: 's-info', warning: 's-warning' };
+  const glowClass = { good: 'glow-good', info: 'glow-info', warning: 'glow-warning' };
+
+  // latest per-segment data from /insight (updated every 3s)
+  const segData = {
+    gangnam:     { speed: 28, vpm: 30, status: 'good' },
+    sinnonhyeon: { speed: 29, vpm: 28, status: 'good' },
+    nonhyeon:    { speed: 29, vpm: 27, status: 'good' },
+  };
+
+  function segmentAt(x) {
+    if (x < SEGMENT_PX) return 'gangnam';
+    if (x < SEGMENT_PX * 2 + GAP_PX) return 'sinnonhyeon';
+    return 'nonhyeon';
+  }
+
+  // ── cars ──
+  const MAX_CARS = 25;
+  const cars = []; // { el, x, laneY }
+  const carLayer = document.getElementById('car-layer');
+
+  function spawnCar() {
+    if (cars.length >= MAX_CARS) return;
+    const el = document.createElement('div');
+    el.className = 'car';
+    el.textContent = '🚗';
+    const laneY = 34 + Math.random() * 48; // scatter across two visual lanes
+    el.style.top = laneY + 'px';
+    carLayer.appendChild(el);
+    cars.push({ el, x: -24, laneY });
+  }
+
+  function animate() {
+    for (let i = cars.length - 1; i >= 0; i--) {
+      const car = cars[i];
+      const seg = segmentAt(Math.max(0, car.x));
+      const d = segData[seg];
+      car.x += speedToPixelsPerFrame(d.speed);
+      car.el.style.transform = 'translateX(' + car.x + 'px)';
+      car.el.className = 'car ' + (glowClass[d.status] || '');
+      if (car.x > TOTAL_PX + 24) { // exited nonhyeon
+        car.el.remove();
+        cars.splice(i, 1);
+      }
+    }
+    requestAnimationFrame(animate);
+  }
+  requestAnimationFrame(animate);
+
+  // spawn rate follows gangnam's vehiclesPerMin (entry point of the strip).
+  // real vpm (~25-35/min) would be a car every ~2s; we compress time 3x so
+  // the road looks alive in a short demo recording.
+  let spawnTimer = null;
+  function rescheduleSpawner() {
+    if (spawnTimer) clearInterval(spawnTimer);
+    const vpm = Math.max(5, segData.gangnam.vpm);
+    const intervalMs = (60000 / vpm) / 3;
+    spawnTimer = setInterval(spawnCar, intervalMs);
+  }
+  rescheduleSpawner();
+
+  // ── data polling (same /insight the card dashboard uses) ──
+  async function refresh() {
+    try {
+      const res = await fetch('/insight');
+      const data = await res.json();
+      const { unified, tick, generatedAt } = data;
+
+      document.getElementById('meta-sub').textContent =
+        'tick #' + tick + ' · ' + new Date(generatedAt).toLocaleTimeString('ko-KR') +
+        ' 기준 · 데이터 3초마다 갱신';
+      document.getElementById('insight-text').textContent = unified.insight;
+
+      unified.contributing.forEach((d) => {
+        const m = d.domain.match(/^traffic-(.+)$/);
+        if (!m || !SEG_IDS.includes(m[1])) return;
+        const segId = m[1];
+        const raw = d.rawData || {};
+        if (typeof raw.avgSpeedKmh === 'number') segData[segId].speed = raw.avgSpeedKmh;
+        if (typeof raw.vehiclesPerMin === 'number') segData[segId].vpm = raw.vehiclesPerMin;
+        segData[segId].status = d.status;
+
+        const el = document.getElementById('seg-' + segId);
+        el.className = 'segment ' + (statusClass[d.status] || '');
+        el.querySelector('.speed-label').textContent = raw.avgSpeedKmh + 'km/h';
+      });
+      rescheduleSpawner();
+    } catch (e) {
+      document.getElementById('meta-sub').textContent = '서버 연결 끊김 — road-dashboard-server.ts 확인';
+    }
+  }
+  refresh();
+  setInterval(refresh, 3000);
+</script>
+</body>
+</html>
