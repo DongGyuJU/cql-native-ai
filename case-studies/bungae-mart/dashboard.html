@@ -63,11 +63,27 @@
         unified.contributing.forEach((d) => {
           const card = document.createElement('div');
           card.className = 'card pulse';
-          card.innerHTML = `
-            <div><span class="dot ${statusColor[d.status]}"></span><span class="name">${d.domain}</span></div>
-            <div class="headline">${d.headline}</div>
-            <div class="detail">${d.detail}</div>
-          `;
+
+          const header = document.createElement('div');
+          const dot = document.createElement('span');
+          dot.className = `dot ${statusColor[d.status]}`;
+          const name = document.createElement('span');
+          name.className = 'name';
+          name.textContent = d.domain; // textContent: never parses HTML/JS, safe against XSS
+          header.appendChild(dot);
+          header.appendChild(name);
+
+          const headline = document.createElement('div');
+          headline.className = 'headline';
+          headline.textContent = d.headline;
+
+          const detail = document.createElement('div');
+          detail.className = 'detail';
+          detail.textContent = d.detail;
+
+          card.appendChild(header);
+          card.appendChild(headline);
+          card.appendChild(detail);
           cardsEl.appendChild(card);
         });
       } catch (e) {

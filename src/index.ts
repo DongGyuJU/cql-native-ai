@@ -75,4 +75,5 @@ export {
   LLMAgentConfig,
   createLLMSynthesizer,
   extractJSON,
+  looksLikePromptInjection,
 } from './providers';

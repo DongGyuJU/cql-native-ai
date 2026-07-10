@@ -85,10 +85,22 @@
           }
           const card = document.createElement('div');
           card.className = 'card';
-          card.innerHTML = `
-            <div><span class="dot ${dotClass[d.status]}"></span><span class="name">${d.domain}</span></div>
-            <div class="headline">${d.headline}</div>
-          `;
+
+          const header = document.createElement('div');
+          const dot = document.createElement('span');
+          dot.className = `dot ${dotClass[d.status]}`;
+          const name = document.createElement('span');
+          name.className = 'name';
+          name.textContent = d.domain; // textContent: never parses HTML/JS, safe against XSS
+          header.appendChild(dot);
+          header.appendChild(name);
+
+          const headline = document.createElement('div');
+          headline.className = 'headline';
+          headline.textContent = d.headline;
+
+          card.appendChild(header);
+          card.appendChild(headline);
           cardsEl.appendChild(card);
         });
       } catch (e) {

@@ -100,6 +100,19 @@ export interface JoinObjectDef {
   projections: string[];
 }
 
+export interface PiFOptions {
+  /**
+   * Hard cap on the number of rows the Cartesian product may produce
+   * (product of every factor's row count). Real-world join factors are
+   * often large (thousands of rows per object), and the naive product
+   * grows multiplicatively — an unbounded join is a real denial-of-
+   * service vector (unbounded memory/CPU) once this runs on production-
+   * sized data rather than demo-sized data. Throws before allocating
+   * anything if the projected size would exceed this. Default: 100,000.
+   */
+  maxProductRows?: number;
+}
+
 /**
  * Π_G(instanceOnA) : an Instance on schemaB that (a) carries every
  * G-included object over as-is (assumes G is object-injective on these
@@ -119,6 +132,7 @@ export function piF(
   schemaB: DomainSchema,
   instanceOnA: Instance,
   joinObject: JoinObjectDef,
+  options: PiFOptions = {},
 ): Instance {
   const rows: Record<string, Row[]> = {};
   for (const bObj of Object.keys(schemaB.objects)) rows[bObj] = [];
@@ -132,6 +146,19 @@ export function piF(
     if (!proj) throw new Error(`piF: unknown projection morphism "${projName}"`);
     return { projName, rows: rows[proj.to] ?? [] };
   });
+
+  const maxProductRows = options.maxProductRows ?? 100_000;
+  const projectedSize = factors.reduce((acc, f) => acc * f.rows.length, 1);
+  if (projectedSize > maxProductRows) {
+    throw new Error(
+      `piF: the Cartesian product would produce ${projectedSize} rows ` +
+        `(${factors.map((f) => `${f.projName}:${f.rows.length}`).join(' × ')}), ` +
+        `exceeding maxProductRows=${maxProductRows}. This guards against ` +
+        `unbounded memory/CPU use on large inputs — pass a larger ` +
+        `maxProductRows explicitly if this size is genuinely intended, ` +
+        `or filter/paginate the source instance first.`,
+    );
+  }
 
   const productRows: Row[] = [];
   const perRowProjections: Record<string, Record<string, string>> = {};
