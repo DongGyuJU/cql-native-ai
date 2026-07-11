@@ -15,6 +15,7 @@ export {
   DomainRelation,
   HistoryEntry,
   AnalyzeOptions,
+  TemporalContext,
   InsightStatus,
   errorInsight,
 } from './types';
@@ -77,3 +78,4 @@ export {
   extractJSON,
   looksLikePromptInjection,
 } from './providers';
+export { TemporalRunner, TemporalRunnerOptions } from './temporal';

@@ -59,6 +59,26 @@ export interface AnalyzeOptions {
   context?: DomainInsight[];
   /** Arbitrary extras (locale, user profile, ...) */
   extras?: Record<string, unknown>;
+  /**
+   * Read-only view of the PREVIOUS tick, provided by TemporalRunner.
+   * Formalizes the C×H (domain × history) product: during tick t, every
+   * agent sees the same frozen snapshot of tick t-1, which is what makes
+   * order-invariance hold across the time axis as well.
+   */
+  temporal?: TemporalContext;
+}
+
+/**
+ * Read-only accessor for the previous tick's frozen snapshot.
+ * Implemented by TemporalRunner; agents must not be able to mutate it.
+ */
+export interface TemporalContext {
+  /** Current tick number (0-based; 0 = first tick, so previous* are undefined there). */
+  tick: number;
+  /** The input another domain received on the PREVIOUS tick (undefined on tick 0 or unknown domain). */
+  previousInput(domainId: string): unknown | undefined;
+  /** The insight another domain produced on the PREVIOUS tick (undefined on tick 0 or unknown domain). */
+  previousInsight(domainId: string): DomainInsight | undefined;
 }
 
 /** Morphism of a Domain Category: a directed relation between objects. */

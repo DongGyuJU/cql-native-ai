@@ -133,6 +133,40 @@ const report = await hrToEng.checkNaturality([q1Data, q2Data]);
 console.log(report.consistent, report.similarity);
 ```
 
+## Temporal propagation (the C×H axis) — v0.2.0
+
+Time-dependent propagation ("this segment reacts to what its upstream
+neighbor looked like one tick ago") used to require a hand-rolled
+previous-tick variable in every demo. `TemporalRunner` makes it a
+first-class feature with one provable rule: **during tick t, every agent
+reads the same frozen snapshot of tick t−1.**
+
+```ts
+import { createAgent, DomainRegistry, MetaAgent, TemporalRunner } from 'cql-native-ai';
+
+const seg1 = createAgent({ id: 'seg1', name: 'Segment 1' },
+  (input, history, options) => {
+    let speed = input.speed;
+    const prev = options?.temporal?.previousInsight('seg0'); // upstream, PREVIOUS tick
+    if (prev?.status === 'warning') speed = Math.min(speed, 12);
+    return { domain: 'seg1', status: speed < 20 ? 'warning' : 'good',
+             headline: `${speed}km/h`, detail: '', recommendation: '', confidence: 1 };
+  });
+
+const runner = new TemporalRunner(new MetaAgent(registry));
+await runner.step(inputs);   // tick 0 — previous* are undefined (no fabricated history)
+await runner.step(inputs);   // tick 1 — sees tick 0's frozen snapshot
+```
+
+Pinned by tests: (1) tick 0 has no previous state; (2) tick t reads
+exactly t−1; (3) the snapshot is immutable within a tick, so registration
+order cannot change results — order invariance extends across the time
+axis; (4) on a chain, a disturbance first reaches node u exactly at
+graph-distance ticks (1 tick/hop) — the property the city-scale benchmark
+verified empirically is now a library guarantee. Per-domain history is
+bounded (`historyDepth`, default 20) so long-running dashboards cannot
+grow memory without limit. See `examples/temporal-propagation.ts`.
+
 ## Testing
 
 The test suite exercises the framework's core guarantees directly:

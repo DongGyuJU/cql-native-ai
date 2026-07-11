@@ -12,6 +12,7 @@ import {
   DomainInsight,
   HistoryEntry,
   UnifiedInsight,
+  AnalyzeOptions,
   errorInsight,
 } from './types';
 
@@ -50,6 +51,18 @@ export interface MetaRunInput {
   /** domainId → input for that agent. Missing ids are skipped. */
   inputs: Record<string, unknown>;
   history?: HistoryEntry[];
+  /**
+   * Per-domain history override. When provided, each agent receives
+   * historyFor(domainId) instead of the flat `history` array — this is
+   * what lets TemporalRunner give every domain its OWN past, rather than
+   * one shared global list. Falls back to `history` when absent.
+   */
+  historyFor?: (domainId: string) => HistoryEntry[];
+  /**
+   * Per-domain analyze options. Used by TemporalRunner to hand every
+   * agent the same frozen previous-tick snapshot (options.temporal).
+   */
+  optionsFor?: (domainId: string) => AnalyzeOptions;
 }
 
 export class MetaAgent {
@@ -65,7 +78,7 @@ export class MetaAgent {
    *      keeping the colimit total)
    *   3. synthesize a UnifiedInsight
    */
-  async run({ inputs, history = [] }: MetaRunInput): Promise<UnifiedInsight> {
+  async run({ inputs, history = [], historyFor, optionsFor }: MetaRunInput): Promise<UnifiedInsight> {
     const agents = this.registry
       .list()
       .filter((a) => inputs[a.domain.id] !== undefined);
@@ -73,7 +86,11 @@ export class MetaAgent {
     const insights: DomainInsight[] = await Promise.all(
       agents.map((a) =>
         a
-          .analyze(inputs[a.domain.id], history)
+          .analyze(
+            inputs[a.domain.id],
+            historyFor ? historyFor(a.domain.id) : history,
+            optionsFor ? optionsFor(a.domain.id) : undefined,
+          )
           .catch((err) => errorInsight(a.domain.id, err)),
       ),
     );
