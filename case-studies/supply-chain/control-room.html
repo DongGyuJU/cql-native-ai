@@ -1,0 +1,589 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>CQL Native AI — 공급망 관제 (Supply Chain Control)</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;700&family=JetBrains+Mono:wght@400;500;700&display=swap');
+
+  :root {
+    --abyss: #0a1420;         /* 심해 남색 배경 */
+    --abyss-2: #0f1d2e;
+    --panel: #13253a;
+    --line: #1e3a52;
+    --teal: #2dd4bf;          /* 컨테이너 청록 */
+    --teal-dim: #14b8a6;
+    --ink: #cbd8e6;
+    --ink-dim: #6b8299;
+    --good: #34d399;
+    --warn: #fbbf24;
+    --crit: #f43f5e;
+    --info: #38bdf8;
+    --flow: #2dd4bf;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    background: var(--abyss);
+    color: var(--ink);
+    font-family: 'Space Grotesk', -apple-system, sans-serif;
+    height: 100vh; overflow: hidden;
+    background-image: radial-gradient(ellipse at 30% 0%, #12263c 0%, var(--abyss) 55%);
+  }
+  .app { display: grid; grid-template-columns: 1fr 340px; grid-template-rows: auto 1fr; height: 100vh; }
+
+  header {
+    grid-column: 1 / 3;
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 14px 22px; border-bottom: 1px solid var(--line);
+    background: rgba(10,20,32,0.7); backdrop-filter: blur(8px);
+  }
+  header h1 { font-size: 15px; font-weight: 700; letter-spacing: 0.5px; display: flex; align-items: center; gap: 10px; }
+  header h1 .badge { font-family: 'JetBrains Mono', monospace; font-size: 9px; font-weight: 500; color: var(--abyss); background: var(--teal); padding: 2px 7px; border-radius: 4px; letter-spacing: 0.5px; }
+  header .sub { font-size: 11px; color: var(--ink-dim); font-family: 'JetBrains Mono', monospace; }
+
+  .stage { position: relative; overflow: hidden; }
+  svg { width: 100%; height: 100%; display: block; }
+
+  .edge { stroke: var(--line); stroke-width: 1.5; fill: none; transition: stroke 0.3s, stroke-width 0.3s; }
+  .edge.active { stroke: var(--flow); stroke-width: 2.5; }
+  .pulse-dot { fill: var(--flow); }
+
+  .node-box { transition: transform 0.4s cubic-bezier(.34,1.56,.64,1); cursor: pointer; }
+  .node-bg { transition: fill 0.4s, stroke 0.4s; rx: 9; }
+  .node-label { font-family: 'JetBrains Mono', monospace; font-size: 10px; font-weight: 500; fill: var(--ink); pointer-events: none; }
+  .node-type { font-family: 'JetBrains Mono', monospace; font-size: 7.5px; fill: var(--ink-dim); pointer-events: none; text-transform: uppercase; letter-spacing: 0.5px; }
+  .node-metric { font-family: 'JetBrains Mono', monospace; font-size: 8px; pointer-events: none; }
+
+  .ring { fill: none; stroke-width: 2; opacity: 0; }
+
+  /* right rail */
+  aside { border-left: 1px solid var(--line); background: var(--abyss-2); display: flex; flex-direction: column; overflow: hidden; }
+  .rail-section { padding: 16px 18px; border-bottom: 1px solid var(--line); }
+  .rail-section h2 { font-size: 10px; text-transform: uppercase; letter-spacing: 1.2px; color: var(--ink-dim); margin-bottom: 12px; font-weight: 500; font-family: 'JetBrains Mono', monospace; }
+
+  .unified { font-size: 13px; line-height: 1.55; color: var(--ink); min-height: 60px; }
+  .unified .status-line { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; font-family: 'JetBrains Mono', monospace; font-size: 11px; }
+  .unified .status-pill { padding: 2px 9px; border-radius: 20px; font-size: 10px; font-weight: 700; }
+
+  .metric-row { display: flex; justify-content: space-between; align-items: baseline; padding: 5px 0; font-family: 'JetBrains Mono', monospace; font-size: 11px; }
+  .metric-row .k { color: var(--ink-dim); }
+  .metric-row .v { font-weight: 700; }
+
+  .log { flex: 1; overflow-y: auto; padding: 14px 18px; font-family: 'JetBrains Mono', monospace; font-size: 10.5px; line-height: 1.5; }
+  .log-entry { padding: 4px 0; border-bottom: 1px solid rgba(30,58,82,0.4); display: flex; gap: 8px; }
+  .log-entry .t { color: var(--ink-dim); flex-shrink: 0; }
+  .log-entry .m { color: var(--ink); }
+  .log-entry.warn .m { color: var(--warn); }
+  .log-entry.crit .m { color: var(--crit); }
+  .log-entry.good .m { color: var(--good); }
+  .log-entry.info .m { color: var(--info); }
+
+  .controls { display: flex; gap: 8px; align-items: center; }
+  button {
+    font-family: 'JetBrains Mono', monospace; font-size: 11px; font-weight: 500;
+    background: var(--panel); color: var(--ink); border: 1px solid var(--line);
+    padding: 7px 13px; border-radius: 6px; cursor: pointer; transition: all 0.2s;
+  }
+  button:hover { border-color: var(--teal); color: var(--teal); }
+  button.primary { background: var(--teal); color: var(--abyss); border-color: var(--teal); font-weight: 700; }
+  button.primary:hover { background: #5eecd8; color: var(--abyss); }
+  button.shock { border-color: var(--crit); color: var(--crit); }
+  button.shock:hover { background: var(--crit); color: white; }
+
+  .legend { display: flex; gap: 14px; font-family: 'JetBrains Mono', monospace; font-size: 9.5px; color: var(--ink-dim); }
+  .legend span { display: flex; align-items: center; gap: 5px; }
+  .legend .sw { width: 9px; height: 9px; border-radius: 2px; }
+
+  .naturality { font-family: 'JetBrains Mono', monospace; font-size: 10.5px; line-height: 1.6; }
+  .naturality .score { font-size: 22px; font-weight: 700; }
+  .flash { animation: flash 0.6s ease; }
+  @keyframes flash { 0%,100% { opacity: 1; } 50% { opacity: 0.4; } }
+  .tick-counter { font-family: 'JetBrains Mono', monospace; font-size: 10px; color: var(--ink-dim); }
+</style>
+</head>
+<body>
+<div class="app">
+  <header>
+    <h1><span class="badge">CQL NATIVE AI</span> 글로벌 공급망 관제 시스템</h1>
+    <div class="controls">
+      <span class="tick-counter" id="tick-counter">tick 0</span>
+      <button id="btn-play" class="primary">▶ 자동 실행</button>
+      <button id="btn-step">▶| 한 틱</button>
+      <button id="btn-shock" class="shock">⚡ 무작위 충격</button>
+      <button id="btn-reset">↺ 초기화</button>
+    </div>
+  </header>
+
+  <div class="stage">
+    <svg id="graph" viewBox="0 0 900 640" preserveAspectRatio="xMidYMid meet"></svg>
+  </div>
+
+  <aside>
+    <div class="rail-section">
+      <h2>Meta AI — 통합 판단 (Colimit)</h2>
+      <div class="unified" id="unified">시스템 대기 중…</div>
+    </div>
+    <div class="rail-section">
+      <h2>자연성 검사 (checkNaturality)</h2>
+      <div class="naturality" id="naturality">
+        <div>순서 무관 일관성 측정</div>
+        <div style="margin-top:6px;"><span class="score" id="nat-score" style="color:var(--ink-dim)">—</span> <span style="color:var(--ink-dim)">/ 1.00</span></div>
+        <div id="nat-detail" style="color:var(--ink-dim); margin-top:4px;">충격 발생 시 두 처리 순서로 재계산</div>
+      </div>
+    </div>
+    <div class="rail-section">
+      <h2>시스템 지표</h2>
+      <div class="metric-row"><span class="k">활성 노드</span><span class="v" id="m-nodes">0</span></div>
+      <div class="metric-row"><span class="k">경보 도메인</span><span class="v" id="m-warn" style="color:var(--warn)">0</span></div>
+      <div class="metric-row"><span class="k">위기 도메인</span><span class="v" id="m-crit" style="color:var(--crit)">0</span></div>
+      <div class="legend" style="margin-top:12px;">
+        <span><span class="sw" style="background:var(--good)"></span>정상</span>
+        <span><span class="sw" style="background:var(--warn)"></span>경보</span>
+        <span><span class="sw" style="background:var(--crit)"></span>위기</span>
+      </div>
+    </div>
+    <div class="rail-section" style="flex:1; display:flex; flex-direction:column; overflow:hidden; padding-bottom:0;">
+      <h2>이벤트 로그 (전파 추적)</h2>
+      <div class="log" id="log"></div>
+    </div>
+  </aside>
+</div>
+
+<script type="module">
+// ═══════════════════════════════════════════════════════════════
+// CQL Native AI — 공급망 관제 (실제 라이브러리 실행 버전)
+//
+// 이 데모는 cql-native-ai를 재구현하지 않는다. 아래 import는 tsc/
+// esbuild로 컴파일된 실제 라이브러리 코드(src/agent.ts, registry.ts,
+// meta.ts, transform.ts)를 그대로 불러온다:
+//   · 각 노드 = 실제 createAgent()로 만든 DomainAgent
+//   · 등록 = 실제 DomainRegistry.register()
+//   · 통합 = 실제 MetaAgent.run() (라이브러리의 colimit 로직)
+//   · 자연성 = 실제 NaturalTransformation.checkNaturality()
+// ═══════════════════════════════════════════════════════════════
+import {
+  createAgent, DomainRegistry, MetaAgent, NaturalTransformation
+} from './cql-native-ai.bundle.js';
+
+// ── 공급망 위상: 공급자 → 항구 → 물류 → 창고 → 소매 → (수요/재무) ──
+const NODES = [
+  // id, label, type, x, y
+  ['supplier-cn',  '선전 공급자',   'SUPPLIER', 90,  120],
+  ['supplier-vn',  '하노이 공급자', 'SUPPLIER', 90,  300],
+  ['supplier-in',  '뭄바이 공급자', 'SUPPLIER', 90,  480],
+  ['port-shanghai','상하이 항',     'PORT',     260, 120],
+  ['port-busan',   '부산 항',       'PORT',     260, 300],
+  ['port-mumbai',  '뭄바이 항',     'PORT',     260, 480],
+  ['freight-pac',  '태평양 물류',   'FREIGHT',  430, 200],
+  ['freight-ind',  '인도양 물류',   'FREIGHT',  430, 420],
+  ['warehouse-la', 'LA 창고',       'WAREHOUSE',600, 160],
+  ['warehouse-rot','로테르담 창고', 'WAREHOUSE',600, 340],
+  ['retail-us',    '북미 소매',     'RETAIL',   770, 160],
+  ['retail-eu',    '유럽 소매',     'RETAIL',   770, 340],
+  ['demand',       '수요 예측',     'DEMAND',   770, 500],
+  ['finance',      '재무/환율',     'FINANCE',  600, 520],
+];
+
+// 엣지 = 자연변환 경로 (상류 → 하류)
+const EDGES = [
+  ['supplier-cn','port-shanghai'], ['supplier-vn','port-busan'], ['supplier-in','port-mumbai'],
+  ['port-shanghai','freight-pac'], ['port-busan','freight-pac'], ['port-mumbai','freight-ind'],
+  ['freight-pac','warehouse-la'], ['freight-ind','warehouse-rot'], ['freight-pac','warehouse-rot'],
+  ['warehouse-la','retail-us'], ['warehouse-rot','retail-eu'],
+  ['demand','retail-us'], ['demand','retail-eu'],
+  ['finance','warehouse-la'], ['finance','warehouse-rot'],
+];
+
+const TYPE_META = {
+  SUPPLIER:  { metric: '생산량', unit: '%', base: 100 },
+  PORT:      { metric: '처리율', unit: '%', base: 100 },
+  FREIGHT:   { metric: '정시율', unit: '%', base: 100 },
+  WAREHOUSE: { metric: '재고',   unit: '%', base: 100 },
+  RETAIL:    { metric: '충족률', unit: '%', base: 100 },
+  DEMAND:    { metric: '수요',   unit: '',  base: 100 },
+  FINANCE:   { metric: '환율지수',unit: '',  base: 100 },
+};
+
+// 무작위 충격 종류 (실제 무역 리스크)
+const SHOCKS = [
+  { label: '항만 파업',     target: 'PORT',      sev: 55, msg: '항만 노동자 파업 — 처리율 급감' },
+  { label: '수요 급증',     target: 'DEMAND',    sev: 45, msg: '블랙프라이데이 수요 폭증' },
+  { label: '환율 충격',     target: 'FINANCE',   sev: 40, msg: '환율 급변동 — 조달 비용 상승' },
+  { label: '공급자 중단',   target: 'SUPPLIER',  sev: 60, msg: '공급자 설비 사고 — 생산 중단' },
+  { label: '해상 지연',     target: 'FREIGHT',   sev: 50, msg: '태풍으로 해상 운송 지연' },
+];
+
+// ── 상태 ──
+let state = {};
+let prevState = {};
+let tick = 0;
+let playing = false;
+let playTimer = null;
+let lastNaturality = null;
+
+function initState() {
+  state = {};
+  for (const [id,,type] of NODES) {
+    state[id] = { health: 100, status: 'good', type };
+  }
+  prevState = JSON.parse(JSON.stringify(state));
+  tick = 0;
+  lastNaturality = null;
+}
+
+// 노드 에이전트 = 자기 입력의 순수 함수 (health → status)
+function classify(health) {
+  if (health < 45) return 'crit';
+  if (health < 75) return 'warn';
+  return 'good';
+}
+
+// status를 라이브러리 InsightStatus로 매핑 (crit→warning, warn→warning, good→good)
+// 라이브러리는 good/warning/info/error를 쓰므로 crit/warn 둘 다 warning으로,
+// 심각도는 rawData.severity로 보존
+function toLibStatus(cls) {
+  return cls === 'good' ? 'good' : 'warning';
+}
+
+// ── 실제 라이브러리로 14개 도메인 에이전트 생성 ──
+// 각 에이전트는 진짜 createAgent()로 만들어지고, 자기 입력(health)만의
+// 순수 함수다. 이것이 라이브러리가 요구하는 Functor 형태.
+const TYPE_LABEL = {};
+for (const [id, label, type] of NODES) TYPE_LABEL[id] = { label, type };
+
+const agentRegistry = new DomainRegistry();
+for (const [id, label, type] of NODES) {
+  agentRegistry.register(createAgent(
+    { id, name: label, metaSummaryTemplate: `${type.toLowerCase()} status` },
+    (input) => {
+      const cls = classify(input.health);
+      return {
+        domain: id,
+        status: toLibStatus(cls),
+        headline: `${label}: ${Math.round(input.health)}%`,
+        detail: cls === 'crit' ? '위기 상태' : (cls === 'warn' ? '경보 상태' : '정상 운영'),
+        recommendation: cls === 'crit' ? '대체 경로 활성화' : (cls === 'warn' ? '모니터링 강화' : '조치 불필요'),
+        confidence: 0.9,
+        rawData: { health: input.health, severity: cls, type },
+      };
+    },
+  ));
+}
+const metaAgent = new MetaAgent(agentRegistry);
+
+// 인접 상류 노드 찾기
+const upstreamOf = {};
+for (const [from, to] of EDGES) { (upstreamOf[to] ??= []).push(from); }
+
+// ── 한 틱 진행: 자연변환 전파 (상류의 "이전 틱" 상태를 읽음) ──
+async function stepTick() {
+  const next = {};
+  for (const [id,,type] of NODES) {
+    const cur = state[id];
+    let health = cur.health;
+
+    // (1) 자연 회복 — 충격이 없으면 서서히 100으로 복귀 (전파는 여러 홉
+    //     살아남되, 단발 충격 후엔 ~14틱이면 완전 회복되는 균형점)
+    health += (100 - health) * 0.09;
+
+    // (2) 상류로부터의 전파: 상류 노드들의 "이전 틱" health가 낮으면
+    //     이번 노드도 끌어내려짐 (1틱 지연 — city 벤치마크에서 검증한 것)
+    const ups = upstreamOf[id] ?? [];
+    if (ups.length) {
+      const worstUpstream = Math.min(...ups.map(u => prevState[u].health));
+      if (worstUpstream < 90) {
+        // 감쇠된 전파: 상류 손상의 일부가 하류로 (한 홉당 완화)
+        const drag = (90 - worstUpstream) * 0.95;
+        health = Math.min(health, 100 - drag);
+      }
+    }
+
+    health = Math.max(0, Math.min(100, health));
+    next[id] = { health, status: classify(health), type };
+  }
+
+  prevState = state;
+  state = next;
+  tick++;
+  render();
+  await updateRail();
+}
+
+// ── 무작위 충격 주입 ──
+async function injectShock(specificShock) {
+  const shock = specificShock || SHOCKS[Math.floor(Math.random() * SHOCKS.length)];
+  const candidates = NODES.filter(([,,type]) => type === shock.target);
+  const [targetId, targetLabel] = candidates[Math.floor(Math.random() * candidates.length)];
+
+  state[targetId].health = Math.max(0, state[targetId].health - shock.sev);
+  state[targetId].status = classify(state[targetId].health);
+
+  logEvent(`⚡ ${shock.label} @ ${targetLabel}`, 'crit');
+  logEvent(`   ${shock.msg} (−${shock.sev})`, 'warn');
+
+  // 충격 발생 시 자연성 검사 수행
+  await runNaturalityCheck(targetId, shock.sev);
+
+  render();
+  await updateRail();
+  flashNode(targetId);
+}
+
+// ── checkNaturality: 실제 라이브러리 NaturalTransformation 호출 ──
+// 충격받은 상류 노드와 그 하류 노드로 진짜 NaturalTransformation을
+// 구성하고, 라이브러리의 checkNaturality()를 실제로 호출한다. 이 함수는
+// 두 상류 인사이트의 "도착 순서"(context=[s1] vs [s2,s1])를 바꿔
+// 하류 결론이 달라지는지 측정한다. 규칙 기반 에이전트라 순서 무관 → 1.00.
+async function runNaturalityCheck(shockId, sev) {
+  // 충격 노드의 하류(있으면)를 타깃으로 자연변환 구성
+  const downstream = (EDGES.find(([from]) => from === shockId) || [])[1];
+  const el = document.getElementById('nat-score');
+  const detail = document.getElementById('nat-detail');
+
+  if (!downstream) {
+    // 하류가 없는 노드(소매 등)면 검사 생략
+    detail.textContent = '이 노드는 하류가 없어 자연변환 대상 아님';
+    return;
+  }
+
+  // 실제 라이브러리 객체로 상류/하류 에이전트를 가져와 NaturalTransformation 생성
+  const sourceAgent = agentRegistry.get(shockId);
+  const targetAgent = agentRegistry.get(downstream);
+
+  const nt = new NaturalTransformation(sourceAgent, targetAgent, {
+    // 상류 health를 하류 입력으로 번역 (자연변환의 translateInput)
+    translateInput: (upInput) => ({ health: Math.min(upInput.health + 10, 100) }),
+  });
+
+  // 두 개의 상류 상태(충격 전/후)로 checkNaturality 실제 호출
+  const beforeShock = { health: state[shockId].health };
+  const afterShock = { health: Math.max(0, state[shockId].health - sev) };
+
+  const report = await nt.checkNaturality([beforeShock, afterShock]);
+  const sim = report.similarity;
+
+  lastNaturality = sim;
+  el.textContent = sim.toFixed(2);
+  el.style.color = sim >= 0.99 ? 'var(--good)' : (sim >= 0.7 ? 'var(--warn)' : 'var(--crit)');
+  el.parentElement.parentElement.classList.remove('flash');
+  void el.offsetWidth;
+  el.parentElement.parentElement.classList.add('flash');
+  detail.innerHTML = report.consistent
+    ? `${shockId}→${downstream} 자연변환: 정보 도착 순서 무관 (via checkNaturality)`
+    : `순서 의존성 감지: ${(sim*100).toFixed(0)}% 일치`;
+}
+
+// ── SVG 렌더링 ──
+const svg = document.getElementById('graph');
+const nodePos = {};
+for (const [id,,,x,y] of NODES) nodePos[id] = { x, y };
+
+const statusColor = { good: '#34d399', warn: '#fbbf24', crit: '#f43f5e' };
+const statusBg =    { good: '#13253a', warn: '#2a2410', crit: '#2e1119' };
+const statusStroke ={ good: '#1e3a52', warn: '#fbbf24', crit: '#f43f5e' };
+
+function buildGraph() {
+  svg.innerHTML = '';
+  // 엣지 먼저
+  for (const [from, to] of EDGES) {
+    const a = nodePos[from], b = nodePos[to];
+    const path = document.createElementNS('http://www.w3.org/2000/svg','path');
+    const mx = (a.x + b.x) / 2;
+    path.setAttribute('d', `M ${a.x+55} ${a.y+16} C ${mx} ${a.y+16}, ${mx} ${b.y+16}, ${b.x} ${b.y+16}`);
+    path.setAttribute('class', 'edge');
+    path.setAttribute('id', `edge-${from}-${to}`);
+    svg.appendChild(path);
+  }
+  // 노드
+  for (const [id, label, type] of NODES) {
+    const { x, y } = nodePos[id];
+    const g = document.createElementNS('http://www.w3.org/2000/svg','g');
+    g.setAttribute('class', 'node-box');
+    g.setAttribute('id', `node-${id}`);
+    g.setAttribute('transform', `translate(${x},${y})`);
+
+    const ring = document.createElementNS('http://www.w3.org/2000/svg','rect');
+    ring.setAttribute('class','ring'); ring.setAttribute('x',-4); ring.setAttribute('y',-4);
+    ring.setAttribute('width',63); ring.setAttribute('height',40); ring.setAttribute('rx',11);
+    ring.setAttribute('id',`ring-${id}`);
+    g.appendChild(ring);
+
+    const bg = document.createElementNS('http://www.w3.org/2000/svg','rect');
+    bg.setAttribute('class','node-bg'); bg.setAttribute('width',55); bg.setAttribute('height',32);
+    bg.setAttribute('rx',9); bg.setAttribute('fill', statusBg.good); bg.setAttribute('stroke', statusStroke.good);
+    bg.setAttribute('stroke-width',1.5); bg.setAttribute('id',`bg-${id}`);
+    g.appendChild(bg);
+
+    const t1 = document.createElementNS('http://www.w3.org/2000/svg','text');
+    t1.setAttribute('class','node-label'); t1.setAttribute('x',6); t1.setAttribute('y',14);
+    t1.textContent = label.length > 8 ? label.slice(0,7)+'…' : label;
+    g.appendChild(t1);
+
+    const t2 = document.createElementNS('http://www.w3.org/2000/svg','text');
+    t2.setAttribute('class','node-type'); t2.setAttribute('x',6); t2.setAttribute('y',24);
+    t2.textContent = type;
+    g.appendChild(t2);
+
+    const t3 = document.createElementNS('http://www.w3.org/2000/svg','text');
+    t3.setAttribute('class','node-metric'); t3.setAttribute('x',49); t3.setAttribute('y',14);
+    t3.setAttribute('text-anchor','end'); t3.setAttribute('fill', statusColor.good);
+    t3.setAttribute('id',`metric-${id}`); t3.textContent = '100';
+    g.appendChild(t3);
+
+    svg.appendChild(g);
+  }
+}
+
+function render() {
+  for (const [id] of NODES) {
+    const s = state[id];
+    const bg = document.getElementById(`bg-${id}`);
+    const metric = document.getElementById(`metric-${id}`);
+    if (!bg) continue;
+    bg.setAttribute('fill', statusBg[s.status]);
+    bg.setAttribute('stroke', statusStroke[s.status]);
+    metric.setAttribute('fill', statusColor[s.status]);
+    metric.textContent = Math.round(s.health);
+  }
+  // 활성 엣지: 상류가 손상됐고 하류로 전파 중인 경로
+  for (const [from, to] of EDGES) {
+    const edge = document.getElementById(`edge-${from}-${to}`);
+    if (!edge) continue;
+    const active = state[from].health < 88 && state[from].status !== 'good';
+    edge.classList.toggle('active', active);
+  }
+}
+
+function flashNode(id) {
+  const ring = document.getElementById(`ring-${id}`);
+  if (!ring) return;
+  ring.setAttribute('stroke', statusColor[state[id].status]);
+  ring.style.transition = 'none'; ring.style.opacity = '1';
+  const g = document.getElementById(`node-${id}`);
+  g.setAttribute('transform', g.getAttribute('transform') + ' scale(1)');
+  requestAnimationFrame(() => {
+    ring.style.transition = 'opacity 1.2s ease'; ring.style.opacity = '0';
+  });
+}
+
+// ── 우측 레일 업데이트 (MetaAgent colimit) ──
+// ── 우측 레일 업데이트: 실제 MetaAgent.run() 호출 ──
+// 통합 판단은 재구현이 아니라 라이브러리의 colimit 로직이 실제로 계산한
+// UnifiedInsight에서 나온다. 각 노드의 현재 health를 실제 에이전트에
+// 입력으로 넘기고, MetaAgent가 전체를 종합한다.
+async function updateRail() {
+  const warnDomains = NODES.filter(([id]) => state[id].status === 'warn');
+  const critDomains = NODES.filter(([id]) => state[id].status === 'crit');
+
+  document.getElementById('m-nodes').textContent = NODES.length;
+  document.getElementById('m-warn').textContent = warnDomains.length;
+  document.getElementById('m-crit').textContent = critDomains.length;
+  document.getElementById('tick-counter').textContent = `tick ${tick}`;
+
+  // ★ 실제 라이브러리 호출: 14개 에이전트를 MetaAgent가 실행하고 종합
+  const inputs = {};
+  for (const [id] of NODES) inputs[id] = { health: state[id].health };
+  const result = await metaAgent.run({ inputs });
+
+  // result는 라이브러리가 만든 진짜 UnifiedInsight
+  //   result.warningDomains — 경보 도메인 목록 (colimit 완전성 보장)
+  //   result.insight        — 종합 판단 문장
+  //   result.contributing   — 모든 기여 insight (무손실)
+  const libWarnCount = result.warningDomains.length;
+
+  const unified = document.getElementById('unified');
+  let statusWord, statusColor2, pill;
+  if (critDomains.length > 0) { statusWord='위기'; statusColor2='var(--crit)'; pill='CRITICAL'; }
+  else if (libWarnCount > 0) { statusWord='주의'; statusColor2='var(--warn)'; pill='WARNING'; }
+  else { statusWord='정상'; statusColor2='var(--good)'; pill='NOMINAL'; }
+
+  // 라이브러리가 생성한 실제 insight 문장을 표시 (정상일 땐 우리 안내문)
+  const body = libWarnCount === 0
+    ? '전 공급망 정상 운영 중. 모든 노드가 목표 수준을 유지하고 있습니다.'
+    : escapeHtml(result.insight);
+
+  unified.innerHTML = `
+    <div class="status-line">
+      <span class="status-pill" style="background:${statusColor2}; color:var(--abyss)">${pill}</span>
+      <span style="color:${statusColor2}">공급망 ${statusWord}</span>
+    </div>
+    <div style="font-size:11.5px; line-height:1.5;">${body}</div>
+    <div style="margin-top:8px; font-size:9.5px; color:var(--ink-dim); font-family:'JetBrains Mono',monospace;">
+      via MetaAgent.run() · contributing=${result.contributing.length} · warningDomains=${libWarnCount}
+    </div>`;
+}
+
+// XSS 방지: 라이브러리 insight를 textContent 방식으로 이스케이프
+function escapeHtml(s) {
+  const div = document.createElement('div');
+  div.textContent = s;
+  return div.innerHTML;
+}
+
+// ── 로그 ──
+function logEvent(msg, kind='info') {
+  const log = document.getElementById('log');
+  const entry = document.createElement('div');
+  entry.className = `log-entry ${kind}`;
+  entry.innerHTML = `<span class="t">t${tick}</span><span class="m">${msg}</span>`;
+  log.insertBefore(entry, log.firstChild);
+  while (log.children.length > 60) log.removeChild(log.lastChild);
+}
+
+// 상태 변화 감지 로그 (전파 추적)
+let lastStatuses = {};
+function logTransitions() {
+  for (const [id, label] of NODES) {
+    const prev = lastStatuses[id];
+    const now = state[id].status;
+    if (prev && prev !== now) {
+      if (now === 'crit') logEvent(`${label} → 위기 (전파 도달)`, 'crit');
+      else if (now === 'warn') logEvent(`${label} → 경보`, 'warn');
+      else if (now === 'good' && prev !== 'good') logEvent(`${label} → 정상 회복`, 'good');
+    }
+    lastStatuses[id] = now;
+  }
+}
+
+// ── 컨트롤 ──
+async function doStep() { await stepTick(); logTransitions(); }
+function togglePlay() {
+  playing = !playing;
+  const btn = document.getElementById('btn-play');
+  btn.textContent = playing ? '⏸ 일시정지' : '▶ 자동 실행';
+  btn.classList.toggle('primary', !playing);
+  if (playing) {
+    playTimer = setInterval(async () => {
+      await doStep();
+      // 자동 실행 중 가끔 무작위 충격
+      if (Math.random() < 0.18) await injectShock();
+    }, 1100);
+  } else clearInterval(playTimer);
+}
+async function reset() {
+  if (playing) togglePlay();
+  initState(); lastStatuses = {};
+  document.getElementById('log').innerHTML = '';
+  document.getElementById('nat-score').textContent = '—';
+  document.getElementById('nat-score').style.color = 'var(--ink-dim)';
+  document.getElementById('nat-detail').textContent = '충격 발생 시 두 처리 순서로 재계산';
+  render(); await updateRail();
+  logEvent('시스템 초기화 완료', 'info');
+}
+
+document.getElementById('btn-play').addEventListener('click', togglePlay);
+document.getElementById('btn-step').addEventListener('click', () => doStep());
+document.getElementById('btn-shock').addEventListener('click', () => injectShock());
+document.getElementById('btn-reset').addEventListener('click', () => reset());
+
+// ── 초기화 ──
+initState();
+buildGraph();
+render();
+await updateRail();
+logEvent('공급망 관제 시스템 온라인', 'good');
+logEvent('14개 도메인 에이전트 등록 완료', 'info');
+</script>
+</body>
+</html>
