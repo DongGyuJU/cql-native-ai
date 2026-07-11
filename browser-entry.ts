@@ -9,4 +9,5 @@ export { createAgent, DomainAgent } from './src/agent';
 export { DomainRegistry } from './src/registry';
 export { MetaAgent } from './src/meta';
 export { NaturalTransformation } from './src/transform';
-export type { DomainInsight, UnifiedInsight, DomainDefinition } from './src/types';
+export { TemporalRunner } from './src/temporal';
+export type { DomainInsight, UnifiedInsight, DomainDefinition, TemporalContext } from './src/types';

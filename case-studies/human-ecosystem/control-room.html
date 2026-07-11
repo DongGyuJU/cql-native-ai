@@ -1,0 +1,427 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>CQL Native AI — 도시 사회 생태계 관제</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;700&family=JetBrains+Mono:wght@400;500;700&display=swap');
+  :root {
+    --bg: #0e0b16; --bg-2: #14101f; --panel: #1a1528; --line: #2a2340;
+    --ink: #d4cde6; --ink-dim: #6f668a;
+    --good: #34d399; --warn: #fbbf24; --crit: #f43f5e; --accent: #a78bfa;
+    --cat-econ: #2dd4bf; --cat-health: #fb7185; --cat-env: #4ade80;
+    --cat-infra: #fbbf24; --cat-social: #a78bfa;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: var(--bg); color: var(--ink); font-family: 'Space Grotesk', sans-serif; height: 100vh; overflow: hidden;
+    background-image: radial-gradient(ellipse at 40% 20%, #191233 0%, var(--bg) 60%); }
+  .app { display: grid; grid-template-columns: 1fr 330px; grid-template-rows: auto 1fr; height: 100vh; }
+  header { grid-column: 1/3; display: flex; align-items: center; justify-content: space-between;
+    padding: 13px 20px; border-bottom: 1px solid var(--line); background: rgba(14,11,22,0.85); backdrop-filter: blur(8px); }
+  header h1 { font-size: 14px; font-weight: 700; display: flex; align-items: center; gap: 10px; }
+  header .badge { font-family: 'JetBrains Mono', monospace; font-size: 8.5px; color: var(--bg); background: var(--accent); padding: 2px 7px; border-radius: 4px; }
+  header .v { font-family:'JetBrains Mono',monospace; font-size: 9px; color: var(--ink-dim); }
+  .stage { position: relative; overflow: hidden; }
+  svg { width: 100%; height: 100%; display: block; }
+  .edge { fill: none; stroke: var(--line); stroke-width: 1.4; transition: stroke .4s, stroke-width .3s; }
+  .edge.active { stroke-width: 2.4; }
+  .node-g { cursor: pointer; }
+  .node-bg { transition: fill .4s, stroke .4s; }
+  .nlabel { font-family:'JetBrains Mono',monospace; font-size: 9.5px; fill: var(--ink); pointer-events:none; }
+  .neff { font-family:'JetBrains Mono',monospace; font-size: 9px; font-weight:700; pointer-events:none; text-anchor:end; }
+  .ncat { font-family:'JetBrains Mono',monospace; font-size: 6.5px; pointer-events:none; letter-spacing:.5px; }
+  .ring { fill:none; stroke-width:2.5; opacity:0; pointer-events:none; }
+  .cat-label { font-family:'JetBrains Mono',monospace; font-size: 8.5px; letter-spacing:1.5px; opacity:.55; }
+  aside { border-left: 1px solid var(--line); background: var(--bg-2); display: flex; flex-direction: column; overflow: hidden; }
+  .rs { padding: 13px 16px; border-bottom: 1px solid var(--line); }
+  .rs h2 { font-size: 9.5px; text-transform: uppercase; letter-spacing: 1.1px; color: var(--ink-dim); margin-bottom: 9px; font-family:'JetBrains Mono',monospace; font-weight:500; }
+  .unified { font-size: 12px; line-height: 1.5; }
+  .status-line { display:flex; align-items:center; gap:8px; margin-bottom:7px; font-family:'JetBrains Mono',monospace; font-size:11px; }
+  .status-pill { padding:2px 9px; border-radius:20px; font-size:9.5px; font-weight:700; }
+  .lib-meta { margin-top:7px; font-size:8.5px; color:var(--ink-dim); font-family:'JetBrains Mono',monospace; }
+  .metric-row { display:flex; justify-content:space-between; padding:3.5px 0; font-family:'JetBrains Mono',monospace; font-size:11px; }
+  .metric-row .k { color: var(--ink-dim); } .metric-row .v { font-weight:700; }
+  .nat .score { font-size:21px; font-weight:700; font-family:'JetBrains Mono',monospace; }
+  .nat .lbl { font-family:'JetBrains Mono',monospace; font-size:9.5px; }
+  .log { flex:1; overflow-y:auto; padding:11px 16px; font-family:'JetBrains Mono',monospace; font-size:10px; line-height:1.5; }
+  .le { padding:3px 0; border-bottom:1px solid rgba(42,35,64,.4); display:flex; gap:7px; }
+  .le .t { color:var(--ink-dim); flex-shrink:0; }
+  .le.warn .m { color:var(--warn); } .le.crit .m { color:var(--crit); }
+  .le.good .m { color:var(--good); } .le.info .m { color:var(--accent); }
+  .controls { display:flex; gap:7px; align-items:center; }
+  button { font-family:'JetBrains Mono',monospace; font-size:10.5px; background:var(--panel); color:var(--ink);
+    border:1px solid var(--line); padding:6px 12px; border-radius:6px; cursor:pointer; transition:all .2s; }
+  button:hover { border-color:var(--accent); color:var(--accent); }
+  button.primary { background:var(--accent); color:var(--bg); border-color:var(--accent); font-weight:700; }
+  button.shock { border-color:var(--crit); color:var(--crit); }
+  button.shock:hover { background:var(--crit); color:#fff; }
+  button.boost { border-color:var(--good); color:var(--good); }
+  button.boost:hover { background:var(--good); color:var(--bg); }
+  .tick-counter { font-family:'JetBrains Mono',monospace; font-size:10px; color:var(--ink-dim); }
+  .flash { animation: flash .6s ease; }
+  @keyframes flash { 0%,100%{opacity:1} 50%{opacity:.4} }
+  .cat-legend { display:flex; gap:10px; flex-wrap:wrap; font-family:'JetBrains Mono',monospace; font-size:8.5px; color:var(--ink-dim); margin-top:9px; }
+  .cat-legend span { display:flex; align-items:center; gap:4px; }
+  .cat-legend .sw { width:8px; height:8px; border-radius:2px; }
+</style>
+</head>
+<body>
+<div class="app">
+  <header>
+    <h1><span class="badge">CQL NATIVE AI</span> 도시 사회 생태계 관제 <span class="v">· TemporalRunner v0.2.0 (실제 라이브러리)</span></h1>
+    <div class="controls">
+      <span class="tick-counter" id="tick-counter">tick 0</span>
+      <button id="btn-play" class="primary">▶ 자동 실행</button>
+      <button id="btn-step">▶| 한 틱</button>
+      <button id="btn-shock" class="shock">⚡ 위기 발생</button>
+      <button id="btn-boost" class="boost">＋ 정책 개입</button>
+      <button id="btn-reset">↺ 초기화</button>
+    </div>
+  </header>
+  <div class="stage"><svg id="eco" viewBox="0 0 940 640" preserveAspectRatio="xMidYMid meet"></svg></div>
+  <aside>
+    <div class="rs">
+      <h2>Meta AI — 통합 판단 (실제 MetaAgent.run)</h2>
+      <div class="unified" id="unified">시스템 대기 중…</div>
+    </div>
+    <div class="rs">
+      <h2>자연성 검사 (실제 checkNaturality)</h2>
+      <div class="nat">
+        <div class="lbl" style="color:var(--ink-dim)">위기 정보 도착 순서 무관성</div>
+        <div style="margin-top:5px;"><span class="score" id="nat-score" style="color:var(--ink-dim)">—</span> <span style="color:var(--ink-dim);font-family:'JetBrains Mono',monospace;font-size:11px;">/ 1.00</span></div>
+        <div class="lbl" id="nat-detail" style="color:var(--ink-dim);margin-top:3px;">위기 발생 시 상·하류 도메인으로 측정</div>
+      </div>
+    </div>
+    <div class="rs">
+      <h2>생태계 지표</h2>
+      <div class="metric-row"><span class="k">도메인 (에이전트)</span><span class="v" id="m-nodes">0</span></div>
+      <div class="metric-row"><span class="k">경보</span><span class="v" id="m-warn" style="color:var(--warn)">0</span></div>
+      <div class="metric-row"><span class="k">위기</span><span class="v" id="m-crit" style="color:var(--crit)">0</span></div>
+      <div class="metric-row"><span class="k">생태계 평균</span><span class="v" id="m-avg">—</span></div>
+      <div class="cat-legend">
+        <span><span class="sw" style="background:var(--cat-econ)"></span>경제</span>
+        <span><span class="sw" style="background:var(--cat-health)"></span>보건</span>
+        <span><span class="sw" style="background:var(--cat-env)"></span>환경</span>
+        <span><span class="sw" style="background:var(--cat-infra)"></span>주거·인프라</span>
+        <span><span class="sw" style="background:var(--cat-social)"></span>사회</span>
+      </div>
+    </div>
+    <div class="rs" style="flex:1;display:flex;flex-direction:column;overflow:hidden;padding-bottom:0;">
+      <h2>이벤트 로그 (교차 전파 추적)</h2>
+      <div class="log" id="log"></div>
+    </div>
+  </aside>
+</div>
+
+<script type="module">
+// ═══════════════════════════════════════════════════════════════
+// CQL Native AI — 도시 사회 생태계 (v0.2.0 첫 실전 데모)
+//
+// 이전 데모(공급망/도로망)와의 결정적 차이:
+//   전파 자체가 라이브러리 정식 기능(TemporalRunner)으로 돌아간다.
+//   각 도메인 에이전트가 options.temporal.previousInsight(상류)를 읽어
+//   스스로 유효수준(effLevel)을 계산 — 수작업 "이전 틱" 변수 없음.
+//   (논문 Limitation 4가 해소된 상태의 첫 시연)
+// ═══════════════════════════════════════════════════════════════
+import {
+  createAgent, DomainRegistry, MetaAgent, NaturalTransformation, TemporalRunner
+} from './cql-native-ai.bundle.js';
+
+// ── 15개 도메인, 5개 카테고리 ──
+const CAT_COLOR = { econ:'#2dd4bf', health:'#fb7185', env:'#4ade80', infra:'#fbbf24', social:'#a78bfa' };
+const NODES = [ // id, 라벨, 카테고리, x, y
+  ['employment','고용','econ',250,300], ['income','가계소득','econ',410,225],
+  ['consumption','소비','econ',560,300], ['smallbiz','소상공인','econ',410,385],
+  ['publichealth','공중보건','health',690,140], ['hospital','의료 부하','health',845,140],
+  ['mental','정신건강','health',540,90],
+  ['climate','기후 스트레스','env',110,85], ['air','대기질','env',300,85], ['energy','에너지 가격','env',115,225],
+  ['housing','주거비','infra',115,470], ['transport','교통','infra',250,555],
+  ['education','교육','social',700,555], ['safety','치안','social',565,480], ['trust','공동체 신뢰','social',720,430],
+];
+// 상류 → 이 도메인 (영향 방향). 경제 4개가 순환 루프를 이룸.
+const UPSTREAMS = {
+  employment: ['smallbiz','publichealth','education'],
+  income: ['employment','energy'],
+  consumption: ['income'],
+  smallbiz: ['consumption','energy','trust','transport'],
+  publichealth: ['air'],
+  hospital: ['publichealth'],
+  mental: ['housing','employment'],
+  air: ['climate'],
+  energy: ['climate'],
+  climate: [], housing: [], transport: [], education: [],
+  safety: ['employment'],
+  trust: ['safety'],
+};
+const EDGES = [];
+for (const [down, ups] of Object.entries(UPSTREAMS)) for (const up of ups) EDGES.push([up, down]);
+
+const TH = 85, PROP = 1.0, RECOVER = 0.04; // verify-ecosystem.ts로 검증된 값
+function classify(v) { return v < 45 ? 'crit' : v < 75 ? 'warn' : 'good'; }
+
+// ── 실제 라이브러리: 15개 에이전트 + TemporalRunner ──
+const registry = new DomainRegistry();
+const LABEL = {};
+for (const [id, label, cat] of NODES) {
+  LABEL[id] = label;
+  registry.register(createAgent(
+    { id, name: label, metaSummaryTemplate: `${cat} condition` },
+    (input, _history, options) => {
+      let eff = input.level;
+      const ups = UPSTREAMS[id];
+      if (ups.length && options?.temporal) {
+        const prevEffs = ups
+          .map(u => options.temporal.previousInsight(u)?.rawData?.effLevel)
+          .filter(x => typeof x === 'number');
+        if (prevEffs.length) {
+          const worst = Math.min(...prevEffs);
+          if (worst < TH) eff = Math.min(eff, 100 - (TH - worst) * PROP);
+        }
+      }
+      eff = Math.max(0, Math.min(100, eff));
+      const cls = classify(eff);
+      return {
+        domain: id,
+        status: cls === 'good' ? 'good' : 'warning',
+        headline: `${label} ${Math.round(eff)}`,
+        detail: cls === 'crit' ? '위기' : (cls === 'warn' ? '경보' : '안정'),
+        recommendation: cls === 'crit' ? '긴급 개입 필요' : (cls === 'warn' ? '모니터링 강화' : '유지'),
+        confidence: 0.9,
+        rawData: { effLevel: eff, severity: cls, cat },
+      };
+    },
+  ));
+}
+const runner = new TemporalRunner(new MetaAgent(registry));
+
+// ── 자체 수준(level) 상태 — 회복/충격만 여기서, 전파는 에이전트 안에서 ──
+let level = {}, lastEff = {}, lastSeverity = {}, playing = false, playTimer = null, lastSev = {};
+function initState() {
+  level = {}; lastEff = {}; lastSeverity = {}; lastSev = {};
+  for (const [id] of NODES) { level[id] = 100; lastEff[id] = 100; lastSeverity[id] = 'good'; }
+  runner.reset();
+}
+
+const CRISES = [
+  { label: '금융 위기', target: 'employment', sev: 85, msg: '대량 실업 — 고용 급락' },
+  { label: '팬데믹', target: 'publichealth', sev: 80, msg: '감염병 확산 — 공중보건 비상' },
+  { label: '기후 재난', target: 'climate', sev: 80, msg: '폭염·홍수 — 기후 스트레스 급증' },
+  { label: '에너지 쇼크', target: 'energy', sev: 75, msg: '에너지 가격 급등' },
+  { label: '주거 위기', target: 'housing', sev: 70, msg: '주거비 폭등' },
+];
+const BOOSTS = [
+  { label: '재정 부양', target: 'income', amt: 30, msg: '가계 재정 지원 집행' },
+  { label: '방역 투자', target: 'publichealth', amt: 30, msg: '보건 인프라 긴급 확충' },
+  { label: '에너지 보조', target: 'energy', amt: 28, msg: '에너지 요금 보조' },
+];
+
+async function stepTick() {
+  for (const [id] of NODES) level[id] += (100 - level[id]) * RECOVER;
+  const inputs = {};
+  for (const [id] of NODES) inputs[id] = { level: level[id] };
+  const result = await runner.step(inputs);   // ★ 실제 TemporalRunner
+  for (const c of result.contributing) {
+    lastEff[c.domain] = c.rawData.effLevel;
+    lastSeverity[c.domain] = c.rawData.severity;
+  }
+  render(); updateRail(result); logTransitions();
+  return result;
+}
+
+async function injectCrisis() {
+  const c = CRISES[Math.floor(Math.random()*CRISES.length)];
+  level[c.target] = Math.max(0, level[c.target] - c.sev);
+  logEvent(`⚡ ${c.label} @ ${LABEL[c.target]} (−${c.sev})`, 'crit');
+  logEvent(`   ${c.msg}`, 'warn');
+  await runNaturalityCheck(c.target, c.sev);
+  await stepTick();
+  flashNode(c.target, '#f43f5e');
+}
+async function injectBoost() {
+  const b = BOOSTS[Math.floor(Math.random()*BOOSTS.length)];
+  level[b.target] = Math.min(100, level[b.target] + b.amt);
+  logEvent(`＋ ${b.label} @ ${LABEL[b.target]} (+${b.amt})`, 'good');
+  logEvent(`   ${b.msg}`, 'info');
+  await stepTick();
+  flashNode(b.target, '#34d399');
+}
+
+// ── 실제 checkNaturality ──
+async function runNaturalityCheck(shockId, sev) {
+  const down = EDGES.find(([from]) => from === shockId)?.[1];
+  const el = document.getElementById('nat-score');
+  const detail = document.getElementById('nat-detail');
+  if (!down) { detail.textContent = `${LABEL[shockId]}: 하류 도메인 없음`; return; }
+  const nt = new NaturalTransformation(registry.get(shockId), registry.get(down), {
+    translateInput: (up) => ({ level: Math.min((up.level ?? 100) + 10, 100) }),
+  });
+  const report = await nt.checkNaturality([
+    { level: level[shockId] + sev }, { level: level[shockId] },
+  ]);
+  const sim = report.similarity;
+  el.textContent = sim.toFixed(2);
+  el.style.color = sim >= 0.99 ? 'var(--good)' : 'var(--warn)';
+  el.parentElement.parentElement.classList.remove('flash'); void el.offsetWidth;
+  el.parentElement.parentElement.classList.add('flash');
+  detail.textContent = report.consistent
+    ? `${LABEL[shockId]}→${LABEL[down]}: 도착 순서 무관 (via checkNaturality)`
+    : `순서 의존성: ${(sim*100).toFixed(0)}%`;
+}
+
+// ── SVG ──
+const svg = document.getElementById('eco');
+const POS = {}; for (const [id,,,x,y] of NODES) POS[id] = { x, y };
+const FILL = { good:'#17251f', warn:'#2a2410', crit:'#2e1119' };
+const STROKE = { good:null, warn:'#fbbf24', crit:'#f43f5e' };
+const EFFC = { good:'#34d399', warn:'#fbbf24', crit:'#f43f5e' };
+function buildGraph() {
+  svg.innerHTML = '';
+  const catLabels = [ ['환경',110,45,'env'], ['보건',690,45,'health'], ['경제',410,180,'econ'], ['주거·인프라',115,425,'infra'], ['사회',640,395,'social'] ];
+  for (const [t,x,y,cat] of catLabels) {
+    const e = document.createElementNS('http://www.w3.org/2000/svg','text');
+    e.setAttribute('x',x); e.setAttribute('y',y); e.setAttribute('class','cat-label');
+    e.setAttribute('fill', CAT_COLOR[cat]); e.textContent = t; svg.appendChild(e);
+  }
+  for (const [a,b] of EDGES) {
+    const p1 = POS[a], p2 = POS[b];
+    const path = document.createElementNS('http://www.w3.org/2000/svg','path');
+    const mx = (p1.x+p2.x)/2, my = (p1.y+p2.y)/2;
+    const dx = p2.x-p1.x, dy = p2.y-p1.y, len = Math.hypot(dx,dy) || 1;
+    const cx = mx - dy/len*18, cy = my + dx/len*18; // 살짝 휜 곡선
+    path.setAttribute('d', `M ${p1.x+40} ${p1.y+12} Q ${cx} ${cy} ${p2.x} ${p2.y+12}`);
+    path.setAttribute('class','edge'); path.setAttribute('id',`e-${a}-${b}`);
+    svg.appendChild(path);
+  }
+  for (const [id,label,cat] of NODES) {
+    const {x,y} = POS[id];
+    const g = document.createElementNS('http://www.w3.org/2000/svg','g');
+    g.setAttribute('class','node-g'); g.setAttribute('transform',`translate(${x-40},${y-8})`);
+    const ring = document.createElementNS('http://www.w3.org/2000/svg','rect');
+    ring.setAttribute('class','ring'); ring.setAttribute('x',-4); ring.setAttribute('y',-4);
+    ring.setAttribute('width',88); ring.setAttribute('height',48); ring.setAttribute('rx',11);
+    ring.setAttribute('id',`ring-${id}`); g.appendChild(ring);
+    const bg = document.createElementNS('http://www.w3.org/2000/svg','rect');
+    bg.setAttribute('class','node-bg'); bg.setAttribute('width',80); bg.setAttribute('height',40);
+    bg.setAttribute('rx',9); bg.setAttribute('fill',FILL.good); bg.setAttribute('stroke',CAT_COLOR[cat]);
+    bg.setAttribute('stroke-width',1.4); bg.setAttribute('id',`bg-${id}`); g.appendChild(bg);
+    const t1 = document.createElementNS('http://www.w3.org/2000/svg','text');
+    t1.setAttribute('class','nlabel'); t1.setAttribute('x',7); t1.setAttribute('y',16);
+    t1.textContent = label; g.appendChild(t1);
+    const t2 = document.createElementNS('http://www.w3.org/2000/svg','text');
+    t2.setAttribute('class','ncat'); t2.setAttribute('x',7); t2.setAttribute('y',31);
+    t2.setAttribute('fill', CAT_COLOR[cat]); t2.textContent = cat.toUpperCase(); g.appendChild(t2);
+    const t3 = document.createElementNS('http://www.w3.org/2000/svg','text');
+    t3.setAttribute('class','neff'); t3.setAttribute('x',73); t3.setAttribute('y',31);
+    t3.setAttribute('fill',EFFC.good); t3.setAttribute('id',`eff-${id}`); t3.textContent = '100'; g.appendChild(t3);
+    svg.appendChild(g);
+  }
+}
+function render() {
+  for (const [id] of NODES) {
+    const sev = lastSeverity[id];
+    const bg = document.getElementById(`bg-${id}`);
+    const eff = document.getElementById(`eff-${id}`);
+    if (!bg) continue;
+    bg.setAttribute('fill', FILL[sev]);
+    if (STROKE[sev]) { bg.setAttribute('stroke', STROKE[sev]); bg.setAttribute('stroke-width', 2); }
+    else { const cat = NODES.find(n=>n[0]===id)[2]; bg.setAttribute('stroke', CAT_COLOR[cat]); bg.setAttribute('stroke-width', 1.4); }
+    eff.setAttribute('fill', EFFC[sev]); eff.textContent = Math.round(lastEff[id]);
+  }
+  for (const [a,b] of EDGES) {
+    const e = document.getElementById(`e-${a}-${b}`);
+    if (!e) continue;
+    const active = lastSeverity[a] !== 'good';
+    e.classList.toggle('active', active);
+    e.setAttribute('stroke', active ? EFFC[lastSeverity[a]] : 'var(--line)');
+  }
+}
+function flashNode(id, color) {
+  const ring = document.getElementById(`ring-${id}`);
+  if (!ring) return;
+  ring.setAttribute('stroke', color);
+  ring.style.transition='none'; ring.style.opacity='1';
+  requestAnimationFrame(() => { ring.style.transition='opacity 1.3s ease'; ring.style.opacity='0'; });
+}
+function escapeHtml(s){ const d=document.createElement('div'); d.textContent=s; return d.innerHTML; }
+
+function updateRail(result) {
+  const warn = NODES.filter(([id]) => lastSeverity[id]==='warn').length;
+  const crit = NODES.filter(([id]) => lastSeverity[id]==='crit').length;
+  const avg = NODES.reduce((s,[id]) => s+lastEff[id], 0) / NODES.length;
+  document.getElementById('m-nodes').textContent = NODES.length;
+  document.getElementById('m-warn').textContent = warn;
+  document.getElementById('m-crit').textContent = crit;
+  document.getElementById('m-avg').textContent = Math.round(avg);
+  document.getElementById('tick-counter').textContent = `tick ${runner.tick}`;
+  const unified = document.getElementById('unified');
+  let word,color,pill;
+  if (crit>0){word='복합 위기';color='var(--crit)';pill='CRITICAL';}
+  else if (result.warningDomains.length>0){word='주의';color='var(--warn)';pill='WARNING';}
+  else {word='안정';color='var(--good)';pill='STABLE';}
+  const body = result.warningDomains.length===0
+    ? '생태계 전 도메인 안정. 교차 영향 없음.'
+    : escapeHtml(result.insight);
+  unified.innerHTML = `
+    <div class="status-line"><span class="status-pill" style="background:${color};color:var(--bg)">${pill}</span>
+    <span style="color:${color}">생태계 ${word}</span></div>
+    <div style="font-size:11px;line-height:1.45;">${body.length>170?body.slice(0,170)+'…':body}</div>
+    <div class="lib-meta">via MetaAgent.run() · TemporalRunner tick=${runner.tick} · contributing=${result.contributing.length} · warn=${result.warningDomains.length}</div>`;
+}
+function logEvent(msg, kind='info') {
+  const log = document.getElementById('log');
+  const e = document.createElement('div');
+  e.className = `le ${kind}`;
+  e.innerHTML = `<span class="t">t${runner.tick}</span><span class="m">${escapeHtml(msg)}</span>`;
+  log.insertBefore(e, log.firstChild);
+  while (log.children.length > 55) log.removeChild(log.lastChild);
+}
+function logTransitions() {
+  for (const [id,label] of NODES) {
+    const prev = lastSev[id], now = lastSeverity[id];
+    if (prev && prev !== now) {
+      if (now==='crit') logEvent(`${label} → 위기 (교차 전파)`, 'crit');
+      else if (now==='warn' && prev==='good') logEvent(`${label} → 경보`, 'warn');
+      else if (now==='good') logEvent(`${label} → 안정 회복`, 'good');
+    }
+    lastSev[id] = now;
+  }
+}
+function togglePlay() {
+  playing = !playing;
+  const btn = document.getElementById('btn-play');
+  btn.textContent = playing ? '⏸ 일시정지' : '▶ 자동 실행';
+  btn.classList.toggle('primary', !playing);
+  if (playing) playTimer = setInterval(async () => {
+    await stepTick();
+    const r = Math.random();
+    if (r < 0.16) await injectCrisis();
+    else if (r < 0.24) await injectBoost();
+  }, 1000);
+  else clearInterval(playTimer);
+}
+async function reset() {
+  if (playing) togglePlay();
+  initState();
+  document.getElementById('log').innerHTML = '';
+  document.getElementById('nat-score').textContent = '—';
+  document.getElementById('nat-score').style.color = 'var(--ink-dim)';
+  document.getElementById('nat-detail').textContent = '위기 발생 시 상·하류 도메인으로 측정';
+  await stepTick();
+  logEvent('생태계 관제 초기화', 'info');
+}
+
+document.getElementById('btn-play').addEventListener('click', togglePlay);
+document.getElementById('btn-step').addEventListener('click', () => stepTick());
+document.getElementById('btn-shock').addEventListener('click', () => injectCrisis());
+document.getElementById('btn-boost').addEventListener('click', () => injectBoost());
+document.getElementById('btn-reset').addEventListener('click', () => reset());
+
+initState();
+buildGraph();
+await stepTick();
+logEvent('도시 사회 생태계 관제 온라인', 'good');
+logEvent('15개 도메인 에이전트 등록 · TemporalRunner v0.2.0', 'info');
+</script>
+</body>
+</html>
