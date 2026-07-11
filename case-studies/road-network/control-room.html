@@ -1,0 +1,426 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>CQL Native AI — 도시 교통 관제 (Traffic Control)</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;700&family=JetBrains+Mono:wght@400;500;700&display=swap');
+  :root {
+    --bg: #0b0f14;
+    --bg-2: #0f151d;
+    --panel: #141d28;
+    --line: #1f2d3d;
+    --amber: #f59e0b;
+    --ink: #c8d6e5;
+    --ink-dim: #64798f;
+    --good: #22c55e;
+    --flow-good: #16a34a;
+    --warn: #f59e0b;
+    --crit: #ef4444;
+    --accent: #38bdf8;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    background: var(--bg); color: var(--ink);
+    font-family: 'Space Grotesk', -apple-system, sans-serif;
+    height: 100vh; overflow: hidden;
+  }
+  .app { display: grid; grid-template-columns: 1fr 330px; grid-template-rows: auto 1fr; height: 100vh; }
+  header {
+    grid-column: 1 / 3; display: flex; align-items: center; justify-content: space-between;
+    padding: 13px 20px; border-bottom: 1px solid var(--line);
+    background: rgba(11,15,20,0.85); backdrop-filter: blur(8px);
+  }
+  header h1 { font-size: 14px; font-weight: 700; display: flex; align-items: center; gap: 10px; }
+  header h1 .badge { font-family: 'JetBrains Mono', monospace; font-size: 8.5px; font-weight: 500; color: var(--bg); background: var(--accent); padding: 2px 7px; border-radius: 4px; }
+
+  .stage { position: relative; overflow: hidden; background:
+    radial-gradient(ellipse at 50% 40%, #101922 0%, var(--bg) 70%); }
+  svg { width: 100%; height: 100%; display: block; }
+
+  .road { stroke-linecap: round; transition: stroke 0.5s, stroke-width 0.3s; }
+  .intersection { transition: fill 0.4s, r 0.3s; cursor: pointer; }
+  .int-label { font-family: 'JetBrains Mono', monospace; font-size: 6px; fill: var(--ink-dim); pointer-events: none; text-anchor: middle; }
+  .incident-ring { fill: none; stroke-width: 2.5; opacity: 0; pointer-events: none; }
+  .car { pointer-events: none; }
+
+  aside { border-left: 1px solid var(--line); background: var(--bg-2); display: flex; flex-direction: column; overflow: hidden; }
+  .rail-section { padding: 14px 16px; border-bottom: 1px solid var(--line); }
+  .rail-section h2 { font-size: 9.5px; text-transform: uppercase; letter-spacing: 1.1px; color: var(--ink-dim); margin-bottom: 10px; font-weight: 500; font-family: 'JetBrains Mono', monospace; }
+  .unified { font-size: 12px; line-height: 1.5; }
+  .unified .status-line { display: flex; align-items: center; gap: 8px; margin-bottom: 7px; font-family: 'JetBrains Mono', monospace; font-size: 11px; }
+  .status-pill { padding: 2px 9px; border-radius: 20px; font-size: 9.5px; font-weight: 700; }
+  .lib-meta { margin-top: 7px; font-size: 9px; color: var(--ink-dim); font-family: 'JetBrains Mono', monospace; }
+
+  .metric-row { display: flex; justify-content: space-between; align-items: baseline; padding: 4px 0; font-family: 'JetBrains Mono', monospace; font-size: 11px; }
+  .metric-row .k { color: var(--ink-dim); }
+  .metric-row .v { font-weight: 700; }
+  .naturality .score { font-size: 21px; font-weight: 700; font-family: 'JetBrains Mono', monospace; }
+  .naturality .lbl { font-family: 'JetBrains Mono', monospace; font-size: 10px; }
+
+  .log { flex: 1; overflow-y: auto; padding: 12px 16px; font-family: 'JetBrains Mono', monospace; font-size: 10px; line-height: 1.5; }
+  .log-entry { padding: 3px 0; border-bottom: 1px solid rgba(31,45,61,0.4); display: flex; gap: 7px; }
+  .log-entry .t { color: var(--ink-dim); flex-shrink: 0; }
+  .log-entry.warn .m { color: var(--warn); }
+  .log-entry.crit .m { color: var(--crit); }
+  .log-entry.good .m { color: var(--good); }
+  .log-entry.info .m { color: var(--accent); }
+
+  .controls { display: flex; gap: 7px; align-items: center; }
+  button { font-family: 'JetBrains Mono', monospace; font-size: 10.5px; font-weight: 500; background: var(--panel); color: var(--ink); border: 1px solid var(--line); padding: 6px 12px; border-radius: 6px; cursor: pointer; transition: all 0.2s; }
+  button:hover { border-color: var(--accent); color: var(--accent); }
+  button.primary { background: var(--accent); color: var(--bg); border-color: var(--accent); font-weight: 700; }
+  button.shock { border-color: var(--crit); color: var(--crit); }
+  button.shock:hover { background: var(--crit); color: white; }
+  .tick-counter { font-family: 'JetBrains Mono', monospace; font-size: 10px; color: var(--ink-dim); }
+  .legend { display: flex; gap: 12px; font-family: 'JetBrains Mono', monospace; font-size: 9px; color: var(--ink-dim); margin-top: 10px; flex-wrap: wrap; }
+  .legend span { display: flex; align-items: center; gap: 4px; }
+  .legend .sw { width: 14px; height: 3px; border-radius: 2px; }
+  .flash { animation: flash 0.6s ease; }
+  @keyframes flash { 0%,100% { opacity: 1; } 50% { opacity: 0.4; } }
+</style>
+</head>
+<body>
+<div class="app">
+  <header>
+    <h1><span class="badge">CQL NATIVE AI</span> 도시 교통 관제 시스템 · 격자형 도로망</h1>
+    <div class="controls">
+      <span class="tick-counter" id="tick-counter">tick 0</span>
+      <button id="btn-play" class="primary">▶ 자동 실행</button>
+      <button id="btn-step">▶| 한 틱</button>
+      <button id="btn-shock" class="shock">⚡ 사고 발생</button>
+      <button id="btn-reset">↺ 초기화</button>
+    </div>
+  </header>
+  <div class="stage">
+    <svg id="grid" viewBox="0 0 820 640" preserveAspectRatio="xMidYMid meet"></svg>
+  </div>
+  <aside>
+    <div class="rail-section">
+      <h2>Meta AI — 통합 판단 (실제 MetaAgent.run)</h2>
+      <div class="unified" id="unified">시스템 대기 중…</div>
+    </div>
+    <div class="rail-section">
+      <h2>자연성 검사 (실제 checkNaturality)</h2>
+      <div class="naturality">
+        <div class="lbl" style="color:var(--ink-dim)">정체 정보 도착 순서 무관성</div>
+        <div style="margin-top:5px;"><span class="score" id="nat-score" style="color:var(--ink-dim)">—</span> <span style="color:var(--ink-dim); font-family:'JetBrains Mono',monospace; font-size:11px;">/ 1.00</span></div>
+        <div class="lbl" id="nat-detail" style="color:var(--ink-dim); margin-top:3px;">사고 발생 시 상·하류 도로로 측정</div>
+      </div>
+    </div>
+    <div class="rail-section">
+      <h2>도로망 지표</h2>
+      <div class="metric-row"><span class="k">교차로 (도메인)</span><span class="v" id="m-nodes">0</span></div>
+      <div class="metric-row"><span class="k">서행 구간</span><span class="v" id="m-warn" style="color:var(--warn)">0</span></div>
+      <div class="metric-row"><span class="k">정체 구간</span><span class="v" id="m-crit" style="color:var(--crit)">0</span></div>
+      <div class="metric-row"><span class="k">평균 속도</span><span class="v" id="m-speed">—</span></div>
+      <div class="legend">
+        <span><span class="sw" style="background:var(--flow-good)"></span>원활</span>
+        <span><span class="sw" style="background:var(--warn)"></span>서행</span>
+        <span><span class="sw" style="background:var(--crit)"></span>정체</span>
+      </div>
+    </div>
+    <div class="rail-section" style="flex:1; display:flex; flex-direction:column; overflow:hidden; padding-bottom:0;">
+      <h2>이벤트 로그 (전파 추적)</h2>
+      <div class="log" id="log"></div>
+    </div>
+  </aside>
+</div>
+
+<script type="module">
+// ═══════════════════════════════════════════════════════════════
+// CQL Native AI — 도시 교통 관제 (실제 라이브러리 실행)
+//   · 각 교차로 = 실제 createAgent()로 만든 DomainAgent
+//   · 통합 = 실제 MetaAgent.run() (colimit)
+//   · 자연성 = 실제 NaturalTransformation.checkNaturality()
+//   · 전파 = 격자 인접 도로로 사고가 2D 전파 (city 벤치마크에서
+//     그래프거리==전파틱 100% 검증한 그 메커니즘)
+// ═══════════════════════════════════════════════════════════════
+import {
+  createAgent, DomainRegistry, MetaAgent, NaturalTransformation
+} from './cql-native-ai.bundle.js';
+
+// ── 격자 도로망 생성 (6×6 교차로 = 36개 도메인) ──
+const GRID = 6;
+const CELL = 110;
+const OX = 70, OY = 60;
+const FREE_SPEED = 60;      // 원활 속도 km/h
+const nodes = [];          // { id, row, col, x, y }
+const nodeById = {};
+for (let r = 0; r < GRID; r++) {
+  for (let c = 0; c < GRID; c++) {
+    const id = `int-${r}-${c}`;
+    const node = { id, row: r, col: c, x: OX + c*CELL, y: OY + r*CELL };
+    nodes.push(node); nodeById[id] = node;
+  }
+}
+// 격자 인접(상하좌우) = 도로 = 전파 경로
+const neighbors = {};
+for (const n of nodes) {
+  const nb = [];
+  const { row: r, col: c } = n;
+  if (r>0) nb.push(`int-${r-1}-${c}`);
+  if (r<GRID-1) nb.push(`int-${r+1}-${c}`);
+  if (c>0) nb.push(`int-${r}-${c-1}`);
+  if (c<GRID-1) nb.push(`int-${r}-${c+1}`);
+  neighbors[n.id] = nb;
+}
+// 도로 엣지 목록 (중복 제거)
+const roads = [];
+const seen = new Set();
+for (const n of nodes) for (const nbId of neighbors[n.id]) {
+  const key = [n.id, nbId].sort().join('|');
+  if (!seen.has(key)) { seen.add(key); roads.push([n.id, nbId]); }
+}
+
+// ── 상태 ──
+let state = {}, prevState = {}, tick = 0, playing = false, playTimer = null;
+let lastStatuses = {};
+function classify(speed) {
+  if (speed < 20) return 'crit';   // 정체
+  if (speed < 40) return 'warn';   // 서행
+  return 'good';                    // 원활
+}
+function toLibStatus(cls) { return cls === 'good' ? 'good' : 'warning'; }
+
+// ── 실제 라이브러리로 36개 교차로 에이전트 생성 ──
+const registry = new DomainRegistry();
+for (const n of nodes) {
+  registry.register(createAgent(
+    { id: n.id, name: `교차로 ${n.row},${n.col}`, metaSummaryTemplate: 'traffic flow' },
+    (input) => {
+      const cls = classify(input.speed);
+      return {
+        domain: n.id,
+        status: toLibStatus(cls),
+        headline: `${Math.round(input.speed)}km/h`,
+        detail: cls === 'crit' ? '정체' : (cls === 'warn' ? '서행' : '원활'),
+        recommendation: cls === 'crit' ? '우회 유도 및 신호 조정' : (cls === 'warn' ? '모니터링' : '유지'),
+        confidence: 0.9,
+        rawData: { speed: input.speed, severity: cls, row: n.row, col: n.col },
+      };
+    },
+  ));
+}
+const meta = new MetaAgent(registry);
+
+function initState() {
+  state = {};
+  for (const n of nodes) state[n.id] = { speed: FREE_SPEED, status: 'good' };
+  prevState = JSON.parse(JSON.stringify(state));
+  tick = 0; lastStatuses = {};
+}
+
+// ── 한 틱: 격자 전파 (인접 교차로의 "이전 틱" 속도를 읽음) ──
+function stepTick() {
+  const next = {};
+  for (const n of nodes) {
+    let speed = state[n.id].speed;
+    // 회복 (느린 회복이라 사고가 격자 전체로 5홉까지 전파됨)
+    speed += (FREE_SPEED - speed) * 0.035;
+    // 인접 전파: 이웃의 이전 틱 속도가 낮으면 이 교차로도 느려짐 (홉당 2틱 지연)
+    const worst = Math.min(...neighbors[n.id].map(nb => prevState[nb].speed), FREE_SPEED);
+    if (worst < 55) {
+      const drag = (55 - worst) * 0.95;
+      speed = Math.min(speed, FREE_SPEED - drag);
+    }
+    speed = Math.max(0, Math.min(FREE_SPEED, speed));
+    next[n.id] = { speed, status: classify(speed) };
+  }
+  prevState = state; state = next; tick++;
+}
+
+// ── 사고 발생 ──
+const INCIDENTS = [
+  { label: '다중 추돌 사고', sev: 58 },
+  { label: '도로 공사', sev: 50 },
+  { label: '집회 통제', sev: 54 },
+  { label: '신호 고장', sev: 48 },
+  { label: '폭우 침수', sev: 56 },
+];
+async function injectShock() {
+  const inc = INCIDENTS[Math.floor(Math.random()*INCIDENTS.length)];
+  const n = nodes[Math.floor(Math.random()*nodes.length)];
+  state[n.id].speed = Math.max(0, state[n.id].speed - inc.sev);
+  state[n.id].status = classify(state[n.id].speed);
+  logEvent(`⚡ ${inc.label} @ 교차로 ${n.row},${n.col} (−${inc.sev}km/h)`, 'crit');
+  await runNaturalityCheck(n.id, inc.sev);
+  render(); await updateRail(); flashIncident(n.id);
+}
+
+// ── 실제 checkNaturality 호출 ──
+async function runNaturalityCheck(shockId, sev) {
+  const nbId = neighbors[shockId][0];
+  const el = document.getElementById('nat-score');
+  const detail = document.getElementById('nat-detail');
+  if (!nbId) { detail.textContent = '인접 도로 없음'; return; }
+
+  const src = registry.get(shockId), tgt = registry.get(nbId);
+  const nt = new NaturalTransformation(src, tgt, {
+    translateInput: (up) => ({ speed: Math.min(up.speed + 8, FREE_SPEED) }),
+  });
+  const before = { speed: state[shockId].speed };
+  const after = { speed: Math.max(0, state[shockId].speed - sev) };
+  const report = await nt.checkNaturality([before, after]);
+  const sim = report.similarity;
+
+  el.textContent = sim.toFixed(2);
+  el.style.color = sim >= 0.99 ? 'var(--good)' : (sim >= 0.7 ? 'var(--warn)' : 'var(--crit)');
+  el.parentElement.parentElement.classList.remove('flash'); void el.offsetWidth;
+  el.parentElement.parentElement.classList.add('flash');
+  detail.innerHTML = report.consistent
+    ? '정체 정보 도착 순서 무관 (via checkNaturality)'
+    : `순서 의존성: ${(sim*100).toFixed(0)}%`;
+}
+
+// ── SVG 렌더링 ──
+const svg = document.getElementById('grid');
+function speedColor(status) {
+  return status === 'crit' ? '#ef4444' : (status === 'warn' ? '#f59e0b' : '#16a34a');
+}
+function buildGrid() {
+  svg.innerHTML = '';
+  // 도로(엣지)
+  for (const [a, b] of roads) {
+    const na = nodeById[a], nb = nodeById[b];
+    const line = document.createElementNS('http://www.w3.org/2000/svg','line');
+    line.setAttribute('x1', na.x); line.setAttribute('y1', na.y);
+    line.setAttribute('x2', nb.x); line.setAttribute('y2', nb.y);
+    line.setAttribute('class','road'); line.setAttribute('stroke','#16a34a');
+    line.setAttribute('stroke-width','3'); line.setAttribute('id',`road-${a}-${b}`);
+    svg.appendChild(line);
+  }
+  // 교차로(노드)
+  for (const n of nodes) {
+    const ring = document.createElementNS('http://www.w3.org/2000/svg','circle');
+    ring.setAttribute('class','incident-ring'); ring.setAttribute('cx',n.x); ring.setAttribute('cy',n.y);
+    ring.setAttribute('r',18); ring.setAttribute('id',`ring-${n.id}`);
+    svg.appendChild(ring);
+    const c = document.createElementNS('http://www.w3.org/2000/svg','circle');
+    c.setAttribute('class','intersection'); c.setAttribute('cx',n.x); c.setAttribute('cy',n.y);
+    c.setAttribute('r',6); c.setAttribute('fill','#16a34a'); c.setAttribute('id',`node-${n.id}`);
+    svg.appendChild(c);
+  }
+}
+function render() {
+  for (const n of nodes) {
+    const c = document.getElementById(`node-${n.id}`);
+    if (c) { c.setAttribute('fill', speedColor(state[n.id].status));
+      c.setAttribute('r', state[n.id].status === 'crit' ? 8 : 6); }
+  }
+  // 도로 색 = 양 끝 교차로 중 더 나쁜 상태
+  for (const [a, b] of roads) {
+    const road = document.getElementById(`road-${a}-${b}`);
+    if (!road) continue;
+    const sev = { good:0, warn:1, crit:2 };
+    const worse = sev[state[a].status] >= sev[state[b].status] ? state[a].status : state[b].status;
+    road.setAttribute('stroke', speedColor(worse));
+    road.setAttribute('stroke-width', worse === 'crit' ? 5 : (worse === 'warn' ? 4 : 3));
+  }
+}
+function flashIncident(id) {
+  const ring = document.getElementById(`ring-${id}`);
+  if (!ring) return;
+  ring.setAttribute('stroke', '#ef4444');
+  ring.style.transition = 'none'; ring.style.opacity = '1';
+  requestAnimationFrame(() => { ring.style.transition = 'opacity 1.4s ease'; ring.style.opacity = '0'; });
+}
+
+// ── 우측 레일: 실제 MetaAgent.run() ──
+async function updateRail() {
+  const warnCount = nodes.filter(n => state[n.id].status === 'warn').length;
+  const critCount = nodes.filter(n => state[n.id].status === 'crit').length;
+  const avgSpeed = nodes.reduce((s,n) => s + state[n.id].speed, 0) / nodes.length;
+
+  document.getElementById('m-nodes').textContent = nodes.length;
+  document.getElementById('m-warn').textContent = warnCount;
+  document.getElementById('m-crit').textContent = critCount;
+  document.getElementById('m-speed').textContent = `${Math.round(avgSpeed)}km/h`;
+  document.getElementById('tick-counter').textContent = `tick ${tick}`;
+
+  // ★ 실제 라이브러리 호출
+  const inputs = {};
+  for (const n of nodes) inputs[n.id] = { speed: state[n.id].speed };
+  const result = await meta.run({ inputs });
+  const libWarn = result.warningDomains.length;
+
+  const unified = document.getElementById('unified');
+  let word, color, pill;
+  if (critCount > 0) { word='정체 발생'; color='var(--crit)'; pill='CRITICAL'; }
+  else if (libWarn > 0) { word='서행 구간'; color='var(--warn)'; pill='WARNING'; }
+  else { word='원활'; color='var(--good)'; pill='NOMINAL'; }
+
+  const body = libWarn === 0
+    ? '전 도로망 원활. 모든 교차로가 목표 속도를 유지 중.'
+    : escapeHtml(result.insight);
+
+  unified.innerHTML = `
+    <div class="status-line">
+      <span class="status-pill" style="background:${color}; color:var(--bg)">${pill}</span>
+      <span style="color:${color}">도로망 ${word}</span>
+    </div>
+    <div style="font-size:11px; line-height:1.45;">${body.length > 160 ? body.slice(0,160)+'…' : body}</div>
+    <div class="lib-meta">via MetaAgent.run() · contributing=${result.contributing.length} · warningDomains=${libWarn}</div>`;
+}
+function escapeHtml(s) { const d = document.createElement('div'); d.textContent = s; return d.innerHTML; }
+
+// ── 로그 ──
+function logEvent(msg, kind='info') {
+  const log = document.getElementById('log');
+  const e = document.createElement('div');
+  e.className = `log-entry ${kind}`;
+  e.innerHTML = `<span class="t">t${tick}</span><span class="m">${escapeHtml(msg)}</span>`;
+  log.insertBefore(e, log.firstChild);
+  while (log.children.length > 50) log.removeChild(log.lastChild);
+}
+function logTransitions() {
+  let newCrit = 0;
+  for (const n of nodes) {
+    const prev = lastStatuses[n.id], now = state[n.id].status;
+    if (prev && prev !== now && now === 'crit') newCrit++;
+    lastStatuses[n.id] = now;
+  }
+  if (newCrit > 0) logEvent(`정체 전파: ${newCrit}개 교차로로 확산`, 'crit');
+}
+
+// ── 컨트롤 ──
+async function doStep() { stepTick(); render(); await updateRail(); logTransitions(); }
+function togglePlay() {
+  playing = !playing;
+  const btn = document.getElementById('btn-play');
+  btn.textContent = playing ? '⏸ 일시정지' : '▶ 자동 실행';
+  btn.classList.toggle('primary', !playing);
+  if (playing) {
+    playTimer = setInterval(async () => {
+      await doStep();
+      if (Math.random() < 0.22) await injectShock();
+    }, 1000);
+  } else clearInterval(playTimer);
+}
+async function reset() {
+  if (playing) togglePlay();
+  initState();
+  document.getElementById('log').innerHTML = '';
+  document.getElementById('nat-score').textContent = '—';
+  document.getElementById('nat-score').style.color = 'var(--ink-dim)';
+  document.getElementById('nat-detail').textContent = '사고 발생 시 상·하류 도로로 측정';
+  render(); await updateRail();
+  logEvent('교통 관제 시스템 초기화', 'info');
+}
+
+document.getElementById('btn-play').addEventListener('click', togglePlay);
+document.getElementById('btn-step').addEventListener('click', () => doStep());
+document.getElementById('btn-shock').addEventListener('click', () => injectShock());
+document.getElementById('btn-reset').addEventListener('click', () => reset());
+
+// ── 초기화 ──
+initState();
+buildGrid();
+render();
+await updateRail();
+logEvent('교통 관제 시스템 온라인', 'good');
+logEvent(`${nodes.length}개 교차로 도메인 에이전트 등록 완료`, 'info');
+</script>
+</body>
+</html>
