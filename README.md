@@ -167,6 +167,43 @@ verified empirically is now a library guarantee. Per-domain history is
 bounded (`historyDepth`, default 20) so long-running dashboards cannot
 grow memory without limit. See `examples/temporal-propagation.ts`.
 
+## Attribute-level mapping (`onAttributes`) — v0.3.0
+
+Real integrations rename fields constantly. A quant panel calls it
+`earn_accel`; the earnings source calls it `op_accel`. Today that rename
+lives in a hand-written dictionary that nothing verifies:
+
+```python
+col_map = { "earn_accel": "op_accel", "earn_rev_yoy": "rev_yoy" }  # a typo here = a silent NaN column
+```
+
+`onAttributes` makes the rename part of the mapping, so it gets checked
+along with everything else — before any data moves:
+
+```ts
+const F: SchemaMapping = {
+  onObjects: { PanelRow: 'EarningsRecord' },
+  onMorphisms: {},
+  onAttributes: {
+    PanelRow: { earn_accel: 'op_accel', earn_rev_yoy: 'rev_yoy', earn_yoy: 'op_yoy' },
+  },
+};
+
+checkSchemaMappingLaws(F, panelSchema, earningsSchema);
+// catches: typos (unknown-source-attribute), forgotten fields
+// (missing-attribute-mapping), and type mismatches (attribute-type-mismatch)
+
+deltaF(F, earnings, panelSchema);
+// rows come out under the TARGET's names: { earn_accel: 0.034, ... }
+```
+
+With no `onAttributes` entry, attribute names are taken to be the identity
+— and that identity is checked too, so a target attribute with no
+counterpart in the source is now reported instead of silently passed
+through. `deltaF` still only relabels; computing genuinely new values
+remains `withDerivedAttributes`'s job. See
+`examples/quant-column-mapping.ts`.
+
 ## Testing
 
 The test suite exercises the framework's core guarantees directly:

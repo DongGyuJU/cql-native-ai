@@ -40,6 +40,26 @@ export interface SchemaMapping {
    * only valid when the target morphism's endpoints map to the SAME source object.
    */
   onMorphisms: Record<string, string[]>;
+  /**
+   * OPTIONAL: target Object name -> (target Attribute name -> source Attribute name).
+   *
+   * This is the attribute-level counterpart of onObjects, and it exists
+   * because real integrations rename fields constantly: a quant panel calls
+   * it `earn_accel` while the earnings source calls it `op_accel`; a welfare
+   * system calls it `성명` while the asset registry calls it `가구주`. Without
+   * this, such renames live in hand-written dictionaries (`col_map = {...}`)
+   * that nothing verifies — a typo there produces silent NaNs, not an error.
+   *
+   * When an object HAS an entry here, every target attribute of that object
+   * must be listed, and each must name a real source attribute of a matching
+   * type — checkSchemaMappingLaws enforces all three.
+   *
+   * When an object has NO entry, the mapping is taken to be the IDENTITY on
+   * attribute names (target attr `x` comes from source attr `x`), and that
+   * identity is itself checked — so a target attribute with no counterpart in
+   * the source is reported rather than silently dropped.
+   */
+  onAttributes?: Record<string, Record<string, string>>;
 }
 
 export type SchemaMappingViolationReason =
@@ -50,7 +70,10 @@ export type SchemaMappingViolationReason =
   | 'disconnected-path'
   | 'identity-endpoint-mismatch'
   | 'path-endpoint-mismatch'
-  | 'equation-not-respected';
+  | 'equation-not-respected'
+  | 'missing-attribute-mapping'
+  | 'unknown-source-attribute'
+  | 'attribute-type-mismatch';
 
 export interface SchemaMappingViolation {
   reason: SchemaMappingViolationReason;
@@ -88,11 +111,53 @@ export function checkSchemaMappingLaws(
       });
       continue;
     }
-    if (!sourceSchema.objects[mapped]) {
+    const sourceObj = sourceSchema.objects[mapped];
+    if (!sourceObj) {
       violations.push({
         reason: 'unknown-source-object', subject: objName,
         detail: `onObjects["${objName}"] = "${mapped}", which does not exist in the source schema`,
       });
+      continue;
+    }
+
+    // ── attribute-level checking ──────────────────────────────────
+    // Either an explicit rename table (onAttributes) or the implicit
+    // identity on names; both are verified against the real source object,
+    // so a typo or a dropped field is reported here rather than surfacing
+    // later as a silently-missing column.
+    const attrMap = F.onAttributes?.[objName];
+    const sourceAttrTypes = new Map(sourceObj.attributes.map((a) => [a.name, a.type]));
+
+    for (const targetAttr of targetSchema.objects[objName].attributes) {
+      const sourceAttrName = attrMap
+        ? attrMap[targetAttr.name]
+        : targetAttr.name; // no table => identity on names
+
+      if (sourceAttrName === undefined) {
+        violations.push({
+          reason: 'missing-attribute-mapping', subject: `${objName}.${targetAttr.name}`,
+          detail: `onAttributes["${objName}"] is declared but has no entry for target attribute "${targetAttr.name}" — every attribute must be accounted for once a rename table exists, so that a forgotten field is an error rather than a silent drop`,
+        });
+        continue;
+      }
+
+      const sourceType = sourceAttrTypes.get(sourceAttrName);
+      if (sourceType === undefined) {
+        violations.push({
+          reason: 'unknown-source-attribute', subject: `${objName}.${targetAttr.name}`,
+          detail: attrMap
+            ? `onAttributes["${objName}"]["${targetAttr.name}"] = "${sourceAttrName}", which is not an attribute of source object "${mapped}"`
+            : `target attribute "${objName}.${targetAttr.name}" has no counterpart named "${targetAttr.name}" on source object "${mapped}" — declare an explicit onAttributes entry if it is named differently there`,
+        });
+        continue;
+      }
+
+      if (sourceType !== targetAttr.type) {
+        violations.push({
+          reason: 'attribute-type-mismatch', subject: `${objName}.${targetAttr.name}`,
+          detail: `"${objName}.${targetAttr.name}" is ${targetAttr.type}, but its source "${mapped}.${sourceAttrName}" is ${sourceType}`,
+        });
+      }
     }
   }
 
@@ -177,6 +242,12 @@ export function checkSchemaMappingLaws(
  * corresponding source rows (same objects, relabeled), target morphisms
  * ARE the composite of the declared source path, applied pointwise.
  *
+ * If F declares `onAttributes` for an object, that object's rows are also
+ * projected onto the target's attribute NAMES (op_accel -> earn_accel).
+ * This is still pure relabeling — no value is computed, derived, or
+ * converted; `withDerivedAttributes` remains the only place new values are
+ * produced. Without an `onAttributes` entry, rows pass through unchanged.
+ *
  * If F passes checkSchemaMappingLaws AND sourceInstance passes
  * checkInstanceIsFunctor, the result of deltaF is GUARANTEED to also pass
  * checkInstanceIsFunctor — functors compose. If sourceInstance is itself
@@ -190,7 +261,33 @@ export function deltaF(
 ): Instance {
   const rows: Record<string, Row[]> = {};
   for (const [tObj, sObj] of Object.entries(F.onObjects)) {
-    rows[tObj] = sourceInstance.rows[sObj] ?? [];
+    const sourceRows = sourceInstance.rows[sObj] ?? [];
+    const attrMap = F.onAttributes?.[tObj];
+    const targetObj = targetSchema.objects[tObj];
+
+    if (!attrMap || !targetObj) {
+      // No rename table (or object not in the target schema): rows pass
+      // through as-is, exactly as before this feature existed.
+      rows[tObj] = sourceRows;
+      continue;
+    }
+
+    // Rename table present: project each source row onto the target's
+    // attribute names. `id` is preserved because it carries the row's
+    // identity, which Δ_F never rewrites — it's what the morphism maps
+    // in `fk` below refer to.
+    rows[tObj] = sourceRows.map((row) => {
+      const out: Row = { id: row.id };
+      for (const targetAttr of targetObj.attributes) {
+        const sourceAttrName = attrMap[targetAttr.name];
+        if (sourceAttrName !== undefined && sourceAttrName in row) {
+          out[targetAttr.name] = row[sourceAttrName];
+        }
+        // A missing entry is already a checkSchemaMappingLaws violation;
+        // we don't fabricate a value for it here.
+      }
+      return out;
+    });
   }
 
   const fk: Record<string, Record<string, string>> = {};
